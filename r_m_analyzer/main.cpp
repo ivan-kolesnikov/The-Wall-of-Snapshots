@@ -32,9 +32,6 @@
 #define RESPONSES_PER_DEFAULT_UPDATE_TIME 100
 
 
-
-
-
 void help();
 void checkCC(uint8_t *buffer, uint16_t *pid, int size);
 void updateStreamStatusInDB(char *argv[], int key);
@@ -102,55 +99,6 @@ void create_hex_str(uint8_t *data, int len, std::string &tgt)
     tgt = ss.str();
 }
 
-/*void sendStatusThread(char *argv[])
-{
-    time_t seconds1, seconds2, secondsDelta;
-    while(1) {
-        seconds1 = time(NULL);
-        sleep(DEFAULT_SLEEP_TIME);
-        ++sleepCounter;
-        curl = curl_easy_init();
-        std::string strRequestLink = std::string(argv[reportLinkIndex])+"?multicast=";
-        strRequestLink += std::string(argv[addressIndex]);
-        strRequestLink += "&id="+std::string(argv[idIndex])+"&name="+std::string(argv[nameIndex]);
-        if (statusHasBeenChanged || sleepCounter >= DEFAULT_UPDATE_TIME/DEFAULT_SLEEP_TIME) {
-            strRequestLink += "&status="+std::to_string(streamStatus);
-            statusHasBeenChanged = 0;
-        } else {
-            strRequestLink +="&status=-1";
-        }
-        seconds2 = time(NULL);
-        secondsDelta = seconds2 - seconds1;
-        if (secondsDelta < 0) {
-            secondsDelta = DEFAULT_SLEEP_TIME;
-        }
-        strRequestLink += "&secbitrate="+std::to_string(((bitrateOneSec*8)/1024)/secondsDelta);
-        bitrateOneSec = 0;
-        if (sleepCounter >= DEFAULT_UPDATE_TIME/DEFAULT_SLEEP_TIME) {
-            strRequestLink += "&bitrate="+std::to_string((((bitrate/DEFAULT_UPDATE_TIME)*8)/1024));
-            bitrate = 0;
-            sleepCounter = 0;
-        } else {
-            strRequestLink +="&bitrate=0";
-        }
-        strRequestLink += "&cc="+std::to_string(ccCounter)+"&udp="+std::to_string(lostUdpPackagesCounter);
-        strRequestLink +="&raise="+std::to_string(udpRaiseCounter);
-
-        if (scrambledStatus != -1) {
-            strRequestLink +="&scrambled="+std::to_string(scrambledStatus);
-        } else {
-            strRequestLink += "&scrambled=-1";
-        }
-        lostUdpPackagesCounter = 0;
-        udpRaiseCounter = 0;
-        ccCounter = 0;
-        scrambledStatus = -1;
-        curl_easy_setopt(curl, CURLOPT_URL, strRequestLink.c_str());
-        curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
-        std::cerr << strRequestLink << std::endl;
-    }
-}*/
 
 void sendStatusThread(char *argv[])
 {
@@ -253,31 +201,6 @@ void sendStatusThread(char *argv[])
 
 int main(int argc, char *argv[])
 {
-    /*time_t seconds1, seconds2, secondsDelta;
-
-    seconds1 = time(NULL);
-    sleep(5);
-    seconds2 = time(NULL);
-    delta = seconds2 - seconds1;
-    int iiiii = sizeof(time_t);
-    int p = 0;*/
-
-
-//    std::string line="<?xml version=\"1.0\"?><commands><getObjects name=\"\"/></commands>";
-//    char * data = new char[line.size() + 1 + 4 + 4];
-//    strcpy(data+4, line.c_str());
-//    *data = 0;
-//    *(data+1) = 0;
-//    *(data+2) = 0;
-//    *(data+3) = line.size();
-//    *(data+line.size()+4+1)=0xff;
-//    *(data+line.size()+4+2)=0xff;
-//    *(data+line.size()+4+3)=0xff;
-//    *(data+line.size()+4+4)=0xff;
-//    *(data+line.size()+4+5)='\0';
-
-
-
     std::thread t(sendStatusThread, argv);
     //argv parsing
     for (int i = 1; i < argc-1; i++) {
@@ -300,78 +223,58 @@ int main(int argc, char *argv[])
         }
     }
 
-   int sock, status;//, socklen;
+   int sock, status;
    socklen_t socklen;
    struct sockaddr_in saddr;
    struct ip_mreq imreq;
-
    // set content of struct saddr and imreq to zero
    memset(&saddr, 0, sizeof(struct sockaddr_in));
    memset(&imreq, 0, sizeof(struct ip_mreq));
-
    // open a UDP socket
    sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP); //was IPPROTO_IP
    if ( sock < 0 )
      perror("Error creating socket"), exit(0);
-
    int enable = 1;
    status = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-
-
-
    saddr.sin_family = PF_INET;
-   saddr.sin_port = htons(atoi(argv[portIndex])); // listen on port 4096
-   //saddr.sin_addr.s_addr = htonl(INADDR_ANY); // bind socket to any interface
+   // listen port
+   saddr.sin_port = htons(atoi(argv[portIndex]));
    saddr.sin_addr.s_addr = inet_addr(argv[addressIndex]);
    status = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
-
    if ( status < 0 )
      perror("Error binding socket to interface"), exit(0);
-
    imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
    imreq.imr_interface.s_addr = INADDR_ANY; // use DEFAULT interface
-
    // JOIN multicast group on default interface
    status = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
               (const void *)&imreq, sizeof(struct ip_mreq));
-
-   //test
+   // set time to live for the socket
    struct timeval timeout;
    timeout.tv_sec = 0;
-   timeout.tv_usec = 900000; //set agaib to 100
-
-//   int time_out = 2000;
+   timeout.tv_usec = 900000; // 0.9 sec
    status = setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
-   //\test
-
    socklen = sizeof(struct sockaddr_in);
-
+   // continuety counter for rtp packages
    uint16_t eseq = 0;
    uint16_t seq = 0;
+   // log
    std::cerr << currentDateTime() << " Capturing from: " << argv[addressIndex] << ":" << argv[portIndex] << " is started\n";
 
 
 
+
+
    for(;;){
+       // read data from the socket
        status = recvfrom(sock, buffer, MAXBUFSIZE, 0,
                          (struct sockaddr *)&saddr, &socklen);
-
        if (status > 0) {
            bitrate += status;
            bitrateOneSec += status;
            fastBitrateOneSec += status;
            if (streamStatus != 1) {
                streamStatus = 1;
-               //updateStreamStatusInDB(argv, 0);
            }
-//           if (DUMP) {
-//               if (!needToWriteDumpAndExit) {
-//                   copyToDumpBuffer();
-//               } else {
-
-//                   writeDumpAndClose();
-//               }
-//           }
 
            int header_size = 12 + 4 * (buffer[0] & 16);
            seq = (buffer[2] << 8)+buffer[3];
@@ -426,37 +329,6 @@ int main(int argc, char *argv[])
                //updateStreamStatusInDB(argv, 0);
            }
        }
-
-//       //check need or not send errors report
-//       if (udpRaiseCounter || lostUdpPackagesCounter || ccCounter) {
-//           if ((time(NULL) - lastErrorTime) >= 1) {
-//               lastErrorTime = time(NULL);
-//               //send error
-//               std::cerr << currentDateTime() << " lostUdpPackagesCounter = " << lostUdpPackagesCounter << " udpRaiseCounter = " << udpRaiseCounter << " ccCounter = " << ccCounter << "\n";
-//               //выполняем инициализацю
-//               curl = curl_easy_init();
-//               if(curl) {
-//                   //curlIsDiong = 1;
-//                   //задаем опцию - получить страницу-lcurl по адресу http://google.com
-//                   std::string strRequestLink = std::string(argv[reportLinkIndex])+"?multicast=";
-//                   strRequestLink += std::string(argv[addressIndex])+"&cc="+std::to_string(ccCounter)+"&udp="+std::to_string(lostUdpPackagesCounter);
-//                   strRequestLink +="&raise="+std::to_string(udpRaiseCounter)+"&id="+std::string(argv[idIndex])+"&name="+std::string(argv[nameIndex]);
-//                   strRequestLink +="&status=-1&event=777";
-////                   strRequestLink +="&noinput="+std::to_string(noInput);
-////                   strRequestLink +="&error="+std::to_string(error_flag);
-//                   std::cerr << curl_easy_setopt(curl, CURLOPT_URL, strRequestLink.c_str()) << std::endl;
-//                   //вызываем функцию, выполняющюю все операции, заданные в опциях (получение страницы, передача данных и т.д.), результат - объект типа CURLcode
-//                   std::cerr << curl_easy_perform(curl) << std::endl;
-//                   //выполняем обязательное завершение сессии
-//                   curl_easy_cleanup(curl);
-//               }
-//               lostUdpPackagesCounter = 0;
-//               udpRaiseCounter = 0;
-//               ccCounter = 0;
-////               curlIsDiong = 0;
-//              // error_flag = 0;
-//           }
-//       }
    }
    // shutdown socket
    shutdown(sock, 2);
@@ -465,67 +337,7 @@ int main(int argc, char *argv[])
    return 0;
 }
 
-//void copyToDumpBuffer(){
-//    uint temp[MAXBUFSIZE];
-//    for (int i = 0; i < MAXBUFSIZE; i++) {
-//        dump_buffer_old[i] = dump_buffer_current[i];
-//        temp[i] = dump_buffer_current[i];
-//    }
-//    for (int i = 0; i < MAXBUFSIZE; i++) {
-//        dump_buffer_current[i] = buffer[i];
-//    }
-//}
 
-//void writeDumpAndClose(){
-//    std::ofstream out("/tmp/dumpFastAnalyzer");
-//    std::string hex_string;
-
-//    out << std::to_string(errorByte);
-
-//    create_hex_str(dump_buffer_old, 12, hex_string);
-//    out << hex_string;
-//    create_hex_str(dump_buffer_old+12, 188, hex_string);
-////    out << hex_string;
-////    create_hex_str(dump_buffer_old, 200, hex_string);
-//    out << hex_string << "\n";
-//    for (int i = 0; i < 6; i++) {
-//        create_hex_str(dump_buffer_old+200+i*188, 188, hex_string);
-//        out << hex_string << "\n";
-//    }
-//    out << "\n" << "\n";
-
-//    create_hex_str(dump_buffer_current, 12, hex_string);
-//    out << hex_string;
-//    create_hex_str(dump_buffer_current+12, 188, hex_string);
-////    out << hex_string;
-////    create_hex_str(dump_buffer_current, 200, hex_string);
-//    out << hex_string << "\n";
-//    for (int i = 0; i < 6; i++) {
-//        create_hex_str(dump_buffer_current+200+i*188, 188, hex_string);
-//        out << hex_string << "\n";
-//    }
-//    out << "\n" << "\n";
-
-//    create_hex_str(buffer, 12, hex_string);
-//    out << hex_string;
-//    create_hex_str(buffer+12, 188, hex_string);
-////    out << hex_string;
-////    create_hex_str(buffer, 200, hex_string);
-//    out << hex_string << "\n";
-//    for (int i = 0; i < 6; i++) {
-//        create_hex_str(buffer+200+i*188, 188, hex_string);
-//        out << hex_string << "\n";
-//    }
-
-//    /*create_hex_str(dump_buffer_current, MAXBUFSIZE, hex_string);
-//    out << hex_string;
-
-//    create_hex_str(buffer, MAXBUFSIZE, hex_string);
-//    out << hex_string;*/
-
-//    out.close();
-//    exit(1);
-//}
 
 void updateStreamStatusInDB(char *argv[], int key) {
 
@@ -593,71 +405,6 @@ uint16_t getPidFromTable(uint8_t *p_big_buffer, uint buffer_size, bool is_pmt_pi
     }
     return result_pid;
 }
-
-//void checkCC(uint8_t *buffer, uint16_t *pid, int size) {
-//    try {
-//        buffer -=5;
-//        for (int j = 0; j < BYTES_TO_COPY; j++) {
-//           *(buffer+j) = slidingArr[j];
-//        }
-//        int i = 0;
-//        uint32_t header_dw = 0;
-//        while (i < size) {
-//           //error_flag = 1;
-//           if (*(buffer+i) == 0x47) {
-//               //error_flag = 1;
-//               header_dw = *(buffer+i+1);
-//               header_dw <<= 8;
-//               header_dw += *(buffer+i+2);
-//               header_dw <<= 8;
-//               header_dw += *(buffer+i+3);
-//               uint8_t discontinuity_indicator = 0;
-//               //find discontinuity indicator
-//               if (header_dw & 0x20 && *(buffer+i+4)) { //??? 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
-//                   discontinuity_indicator = (*(buffer+i+5)) & 0x80;
-//               }
-//               if (header_dw & 0x10 && (header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator) {
-//                   //error_flag = 0;
-//                   if (cc == -1 || discontinuity_indicator) {
-////                       cc = header_dw & 0xf;
-////                       ecc = cc;
-//                         ecc = header_dw & 0xf;
-//                   }
-//                   cc = header_dw & 0xf;
-//                   if (ecc != cc) {
-//                       if (!ccErrorOccurcs) {
-//                           ccErrorOccurcs = 1;
-//                       } else {
-////                           errorByte = i-5;
-//                           ccCounter++;
-//                           ecc = cc+1;
-//                           //std::cout << "Error!!!" << "\n";
-//                           if (ecc > 15) {
-//                               ecc = 0;
-//                           }
-////                           needToWriteDumpAndExit = 1;
-//                       }
-//                   } else {
-//                       ccErrorOccurcs = 0;
-//                       ecc++;
-//                       if (ecc > 15) {
-//                           ecc = 0;
-//                       }
-//                   }
-//               }
-//           }
-//           i++;
-//        }
-//        for (int j = 0; j < BYTES_TO_COPY; j++) {
-//           slidingArr[j] = *(buffer+i+j);
-//        }
-////        if (error_flag == 1) {
-////            int p = 0;
-////        }
-//    }  catch(...) {
-//        std::cerr << currentDateTime() << "Error ocurs" << "\n";
-//    }
-//}
 
 void checkCC(uint8_t *buffer, uint16_t *pid, int size) {
     int tsPacketsCount = size/DEFAULT_TS_PACKET_SIZE;
