@@ -6,6 +6,7 @@ CONFIG += c++11
 TARGET = r_m_analyzer
 CONFIG += console
 CONFIG -= app_bundle
+LIBS+= -lcurl
 
 TEMPLATE = app
 
