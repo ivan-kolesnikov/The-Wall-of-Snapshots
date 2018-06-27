@@ -21,7 +21,8 @@
 #include <iomanip>
 #include <fstream>
 
-#define MAXBUFSIZE 1328 // Max UDP Packet size is 64 Kbyte //was 65536
+#define RTP_PACKAGE_SIZE 1328 // Max UDP Packet size is 64 Kbyte //was 65536
+
 #define PACKETS_TO_MAX_BUFFER 2000
 //#define BYTES_TO_COPY 5
 #define DUMP 0
@@ -34,12 +35,14 @@
 
 void help();
 void checkCC(uint8_t *buffer, uint16_t *pid, int size);
-void updateStreamStatusInDB(char *argv[], int key);
 void copyToDumpBuffer();
 void writeDumpAndClose();
+void sendStatusThread(char *argv[]);
 uint16_t getPidFromTable(uint8_t *p_big_buffer, uint buffer_size, bool is_pmt_pid, uint16_t table_pid);
-uint8_t *big_buffer = new uint8_t[MAXBUFSIZE*PACKETS_TO_MAX_BUFFER];
+
+uint8_t *big_buffer = new uint8_t[RTP_PACKAGE_SIZE*PACKETS_TO_MAX_BUFFER];
 uint8_t *start_big_buffer = big_buffer;
+
 uint maxBuffCounter = 0;
 uint maxBuffSize = 0;
 uint16_t pcr_pid = 0;
@@ -67,7 +70,7 @@ CURL *curl;
 //uint8_t dump_buffer_current[MAXBUFSIZE] = {0};
 //uint8_t dump_buffer_old[MAXBUFSIZE] = {0};
 //bool needToWriteDumpAndExit = 0;
-uint8_t buffer[MAXBUFSIZE];
+//uint8_t buffer[MAXBUFSIZE];
 int needToUpdateStatus = 0;
 //int errorByte = 0;
 
@@ -99,6 +102,170 @@ void create_hex_str(uint8_t *data, int len, std::string &tgt)
     tgt = ss.str();
 }
 
+
+int main(int argc, char *argv[])
+{
+    std::thread t(sendStatusThread, argv);
+    //argv parsing
+    for (int i = 1; i < argc-1; i++) {
+        if (std::string(argv[i]) == "-a") {
+            addressIndex = ++i;
+        } else if (std::string(argv[i]) == "-p") {
+            portIndex = ++i;
+        } else if (std::string(argv[i]) == "-i") {
+            idIndex = ++i;
+        } else if (std::string(argv[i]) == "-n") {
+            nameIndex = ++i;
+        } else if (std::string(argv[i]) == "-r") {
+            reportLinkIndex = ++i;
+        } else if (std::string(argv[i]) == "-m") {
+            minBitrateIndex = ++i;
+        }
+        else {
+            help();
+            return -1;
+        }
+    }
+
+   int sock, status;
+   socklen_t socklen;
+   struct sockaddr_in saddr;
+   struct ip_mreq imreq;
+   // set content of struct saddr and imreq to zero
+   memset(&saddr, 0, sizeof(struct sockaddr_in));
+   memset(&imreq, 0, sizeof(struct ip_mreq));
+   // open a UDP socket
+   sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP); //was IPPROTO_IP
+   if ( sock < 0 )
+     perror("Error creating socket"), exit(0);
+   int enable = 1;
+   status = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+   saddr.sin_family = PF_INET;
+   // listen port
+   saddr.sin_port = htons(atoi(argv[portIndex]));
+   saddr.sin_addr.s_addr = inet_addr(argv[addressIndex]);
+   status = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
+   if ( status < 0 )
+     perror("Error binding socket to interface"), exit(0);
+   imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
+   imreq.imr_interface.s_addr = INADDR_ANY; // use DEFAULT interface
+   // JOIN multicast group on default interface
+   status = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+              (const void *)&imreq, sizeof(struct ip_mreq));
+   // set time to live for the socket
+   struct timeval timeout;
+   timeout.tv_sec = 0;
+   timeout.tv_usec = 900000; // 0.9 sec
+   status = setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
+   socklen = sizeof(struct sockaddr_in);
+   // log
+   std::cerr << currentDateTime() << " Capturing from: " << argv[addressIndex] << ":" << argv[portIndex] << " is started\n";
+
+
+
+   // continuety counter for rtp packages
+   uint16_t eseq = 0;
+   uint16_t seq = 0;
+
+   int bytes_read = 0;
+   bool stream_status = 0;
+
+   int udp_error_raise_counter = 0;
+   uint udp_lost_packages_counter = 0;
+
+   uint16_t pcr_pid = 0;
+
+   uint8_t rtp_package_buff[RTP_PACKAGE_SIZE]; //!!!!MAXBUFSIZE
+
+
+
+   for(;;){
+       // read data from the socket
+       status = recvfrom(sock, rtp_package_buff, RTP_PACKAGE_SIZE, 0,
+                         (struct sockaddr *)&saddr, &socklen);
+       // new data has been received
+       if (status > 0) {
+           stream_status = 1;
+           bytes_read += status;
+
+           //bitrate += status;
+           //bitrateOneSec += status;
+           //fastBitrateOneSec += status;
+           /*if (streamStatus != 1) {
+               streamStatus = 1;
+           }*/
+           int header_size = 12 + 4 * (rtp_package_buff[0] & 16);
+
+           seq = (rtp_package_buff[2] << 8)+rtp_package_buff[3];
+           if (!eseq && seq) {
+               eseq = seq;
+           } else {
+               eseq++;
+           }
+
+           if (seq != eseq) {
+               int delta_seq_eseq = (seq-eseq);
+               if (delta_seq_eseq < 0) {
+                   delta_seq_eseq = delta_seq_eseq + 65535;
+               }
+               udp_lost_packages_counter += delta_seq_eseq;
+               udp_error_raise_counter++;
+               //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
+               eseq = seq;
+           }
+
+           /*
+           if (seq != eseq) {
+               int packages_counter = (seq-eseq);
+               if (packages_counter < 0) {
+                   packages_counter = packages_counter + 65535;
+               }
+               lostUdpPackagesCounter += packages_counter;
+               udpRaiseCounter++;
+               //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
+               eseq = seq;
+           }
+           */
+
+           if (!pcr_pid) {
+               if (maxBuffCounter++ < PACKETS_TO_MAX_BUFFER) {
+                   for (int i = header_size; i < status; i++) {
+                       *big_buffer++ = rtp_package_buff[i];
+                       maxBuffSize++;
+                   }
+               } else {
+                   uint16_t pmt_pid = getPidFromTable(start_big_buffer, maxBuffSize, 1, 0);
+                   pcr_pid = getPidFromTable(start_big_buffer, maxBuffSize, 0, pmt_pid);
+                   if (pcr_pid != 0) {
+                       std::cout << "pid = " <<std::to_string(pcr_pid) << std::endl;
+                       delete [] start_big_buffer;
+                   } else {
+                       std::cout << "pid = -1" << std::endl;
+                       big_buffer = start_big_buffer;
+                       maxBuffCounter = 0;
+                   }
+               }
+           }
+           else {
+               //error_flag = 1;
+
+               //checkCC(&buffer[header_size], &pcr_pid, status); //old
+               checkCC(&rtp_package_buff[header_size], &pcr_pid, status-header_size);
+           }
+           //std::cout << QString::number(seq).toStdString() << "      "<< QString::number(seq).toStdString() <<  "\n";
+       }
+       if (status == -1) {
+           if (streamStatus != 0) {
+               streamStatus = 0;
+           }
+       }
+   }
+   // shutdown socket
+   shutdown(sock, 2);
+   // close socket
+   close(sock);
+   return 0;
+}
 
 void sendStatusThread(char *argv[])
 {
@@ -199,171 +366,7 @@ void sendStatusThread(char *argv[])
     }
 }
 
-int main(int argc, char *argv[])
-{
-    std::thread t(sendStatusThread, argv);
-    //argv parsing
-    for (int i = 1; i < argc-1; i++) {
-        if (std::string(argv[i]) == "-a") {
-            addressIndex = ++i;
-        } else if (std::string(argv[i]) == "-p") {
-            portIndex = ++i;
-        } else if (std::string(argv[i]) == "-i") {
-            idIndex = ++i;
-        } else if (std::string(argv[i]) == "-n") {
-            nameIndex = ++i;
-        } else if (std::string(argv[i]) == "-r") {
-            reportLinkIndex = ++i;
-        } else if (std::string(argv[i]) == "-m") {
-            minBitrateIndex = ++i;
-        }
-        else {
-            help();
-            return -1;
-        }
-    }
 
-   int sock, status;
-   socklen_t socklen;
-   struct sockaddr_in saddr;
-   struct ip_mreq imreq;
-   // set content of struct saddr and imreq to zero
-   memset(&saddr, 0, sizeof(struct sockaddr_in));
-   memset(&imreq, 0, sizeof(struct ip_mreq));
-   // open a UDP socket
-   sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP); //was IPPROTO_IP
-   if ( sock < 0 )
-     perror("Error creating socket"), exit(0);
-   int enable = 1;
-   status = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-   saddr.sin_family = PF_INET;
-   // listen port
-   saddr.sin_port = htons(atoi(argv[portIndex]));
-   saddr.sin_addr.s_addr = inet_addr(argv[addressIndex]);
-   status = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
-   if ( status < 0 )
-     perror("Error binding socket to interface"), exit(0);
-   imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
-   imreq.imr_interface.s_addr = INADDR_ANY; // use DEFAULT interface
-   // JOIN multicast group on default interface
-   status = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-              (const void *)&imreq, sizeof(struct ip_mreq));
-   // set time to live for the socket
-   struct timeval timeout;
-   timeout.tv_sec = 0;
-   timeout.tv_usec = 900000; // 0.9 sec
-   status = setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
-   socklen = sizeof(struct sockaddr_in);
-   // continuety counter for rtp packages
-   uint16_t eseq = 0;
-   uint16_t seq = 0;
-   // log
-   std::cerr << currentDateTime() << " Capturing from: " << argv[addressIndex] << ":" << argv[portIndex] << " is started\n";
-
-
-
-
-
-   for(;;){
-       // read data from the socket
-       status = recvfrom(sock, buffer, MAXBUFSIZE, 0,
-                         (struct sockaddr *)&saddr, &socklen);
-       if (status > 0) {
-           bitrate += status;
-           bitrateOneSec += status;
-           fastBitrateOneSec += status;
-           if (streamStatus != 1) {
-               streamStatus = 1;
-           }
-
-           int header_size = 12 + 4 * (buffer[0] & 16);
-           seq = (buffer[2] << 8)+buffer[3];
-
-           if (!eseq && seq) {
-               eseq = seq;
-           } else {
-               eseq++;
-           }
-
-           if (seq != eseq) {
-               int packages_counter = (seq-eseq);
-               if (packages_counter < 0) {
-                   packages_counter = packages_counter + 65535;
-               }
-               lostUdpPackagesCounter += packages_counter;
-               udpRaiseCounter++;
-               //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
-               eseq = seq;
-           }
-
-           if (!pcr_pid) {
-               if (maxBuffCounter++ < PACKETS_TO_MAX_BUFFER) {
-                   for (int i = header_size; i < status; i++) {
-                       *big_buffer++ = buffer[i];
-                       maxBuffSize++;
-                   }
-               } else {
-                   uint16_t pmt_pid = getPidFromTable(start_big_buffer, maxBuffSize, 1, 0);
-                   pcr_pid = getPidFromTable(start_big_buffer, maxBuffSize, 0, pmt_pid);
-                   if (pcr_pid != 0) {
-                       std::cout << "pid = " <<std::to_string(pcr_pid) << std::endl;
-                       delete [] start_big_buffer;
-                   } else {
-                       std::cout << "pid = -1" << std::endl;
-                       big_buffer = start_big_buffer;
-                       maxBuffCounter = 0;
-                   }
-               }
-           }
-           else {
-               //error_flag = 1;
-
-               //checkCC(&buffer[header_size], &pcr_pid, status); //old
-               checkCC(&buffer[header_size], &pcr_pid, status-header_size);
-           }
-           //std::cout << QString::number(seq).toStdString() << "      "<< QString::number(seq).toStdString() <<  "\n";
-       }
-       if (status == -1) {
-           if (streamStatus != 0) {
-               streamStatus = 0;
-               //updateStreamStatusInDB(argv, 0);
-           }
-       }
-   }
-   // shutdown socket
-   shutdown(sock, 2);
-   // close socket
-   close(sock);
-   return 0;
-}
-
-
-
-void updateStreamStatusInDB(char *argv[], int key) {
-
-    curl = curl_easy_init();
-    if(curl) {
-        //curlIsDiong = 1;
-        std::string strRequestLink = std::string(argv[reportLinkIndex])+"?multicast=";
-        strRequestLink += std::string(argv[addressIndex]);
-        strRequestLink += "&id="+std::string(argv[idIndex])+"&name="+std::string(argv[nameIndex]);
-        strRequestLink += "&status="+std::to_string(streamStatus);
-        if (key == 1) {
-            strRequestLink += "&bitrate="+std::to_string((((bitrate/DEFAULT_UPDATE_TIME)*8)/1024));
-            bitrate = 0;
-            strRequestLink += "&secbitrate="+std::to_string(((bitrateOneSec*8)/1024));
-            bitrateOneSec = 0;
-        } else if (key == 2) {
-            strRequestLink += "&secbitrate="+std::to_string(((bitrateOneSec*8)/1024));
-            bitrateOneSec = 0;
-        }
-        strRequestLink += "&event="+std::to_string(key);
-        std::cerr << curl_easy_setopt(curl, CURLOPT_URL, strRequestLink.c_str()) << std::endl;
-        std::cerr << curl_easy_perform(curl) << std::endl;
-        curl_easy_cleanup(curl);
-    }
-    //curlIsDiong = 0;
-}
 
 uint16_t getPidFromTable(uint8_t *p_big_buffer, uint buffer_size, bool is_pmt_pid, uint16_t table_pid) {
     uint32_t ts_header_dw = 0x47;
