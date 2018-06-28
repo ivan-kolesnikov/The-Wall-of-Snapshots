@@ -22,10 +22,17 @@
 #include <fstream>
 
 #define RTP_PACKAGE_SIZE 1328 // Max UDP Packet size is 64 Kbyte //was 65536
+#define VIDEO_PID_IDENTIFY_REQUIRED_SIZE 2097152 // 2MB buffer to identify a video pid
+
+
+
+
+
+
 
 #define PACKETS_TO_MAX_BUFFER 2000
 //#define BYTES_TO_COPY 5
-#define DUMP 0
+
 #define DEFAULT_TS_PACKET_SIZE 188
 #define DEFAULT_UPDATE_TIME 60
 #define DEFAULT_SLEEP_TIME 5
@@ -35,16 +42,15 @@
 
 void help();
 void checkCC(uint8_t *buffer, uint16_t *pid, int size);
-void copyToDumpBuffer();
-void writeDumpAndClose();
+
 void sendStatusThread(char *argv[]);
 uint16_t getPidFromTable(uint8_t *p_big_buffer, uint buffer_size, bool is_pmt_pid, uint16_t table_pid);
 
-uint8_t *big_buffer = new uint8_t[RTP_PACKAGE_SIZE*PACKETS_TO_MAX_BUFFER];
-uint8_t *start_big_buffer = big_buffer;
+//uint8_t *big_buffer = new uint8_t[RTP_PACKAGE_SIZE*PACKETS_TO_MAX_BUFFER];
+//uint8_t *start_big_buffer = big_buffer;
 
-uint maxBuffCounter = 0;
-uint maxBuffSize = 0;
+//uint maxBuffCounter = 0;
+//uint maxBuffSize = 0;
 uint16_t pcr_pid = 0;
 uint ccCounter = 0;
 uint lostUdpPackagesCounter = 0;
@@ -66,10 +72,7 @@ time_t lastErrorTime = time(NULL);
 //uint8_t slidingArr[BYTES_TO_COPY] = {0};
 int addressIndex, portIndex, idIndex, nameIndex, reportLinkIndex, minBitrateIndex;
 CURL *curl;
-// DUMP
-//uint8_t dump_buffer_current[MAXBUFSIZE] = {0};
-//uint8_t dump_buffer_old[MAXBUFSIZE] = {0};
-//bool needToWriteDumpAndExit = 0;
+
 //uint8_t buffer[MAXBUFSIZE];
 int needToUpdateStatus = 0;
 //int errorByte = 0;
@@ -175,7 +178,12 @@ int main(int argc, char *argv[])
 
    uint16_t pcr_pid = 0;
 
-   uint8_t rtp_package_buff[RTP_PACKAGE_SIZE]; //!!!!MAXBUFSIZE
+   uint8_t rtp_package_buff[RTP_PACKAGE_SIZE];
+
+   uint8_t *video_pid_identify_buffer = new uint8_t[VIDEO_PID_IDENTIFY_REQUIRED_SIZE + RTP_PACKAGE_SIZE]; //big_buffer
+   uint8_t *start_big_buffer = video_pid_identify_buffer; // start_big_buffer
+   uint video_pid_identify_buffer_size = 0; //maxBuffCounter
+   uint maxBuffSize = 0; //maxBuffSize
 
 
 
@@ -214,19 +222,57 @@ int main(int argc, char *argv[])
                eseq = seq;
            }
 
-           /*
-           if (seq != eseq) {
-               int packages_counter = (seq-eseq);
-               if (packages_counter < 0) {
-                   packages_counter = packages_counter + 65535;
+           if (!pcr_pid) {
+               if (video_pid_identify_buffer_size < VIDEO_PID_IDENTIFY_REQUIRED_SIZE) {
+                   for (int i = header_size; i < status; i++) {
+                       *video_pid_identify_buffer++ = rtp_package_buff[i];
+                       video_pid_identify_buffer_size++;
+                   }
+               } else {
+                   uint16_t pmt_pid = getPidFromTable(start_big_buffer, video_pid_identify_buffer_size, 1, 0);
+                   pcr_pid = getPidFromTable(start_big_buffer, video_pid_identify_buffer_size, 0, pmt_pid);
+                   if (pcr_pid != 0) {
+                       std::cout << "pid = " <<std::to_string(pcr_pid) << std::endl;
+                       delete [] start_big_buffer; //???
+                   } else {
+                       std::cout << "pid = -1" << std::endl;
+                       video_pid_identify_buffer = start_big_buffer;
+                       video_pid_identify_buffer_size = 0;
+                   }
                }
-               lostUdpPackagesCounter += packages_counter;
-               udpRaiseCounter++;
-               //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
-               eseq = seq;
            }
-           */
 
+
+           if (!pcr_pid) {
+               if (maxBuffCounter++ < PACKETS_TO_MAX_BUFFER) {
+                   for (int i = header_size; i < status; i++) {
+                       *big_buffer++ = rtp_package_buff[i];
+                       maxBuffSize++;
+                   }
+               } else {
+                   uint16_t pmt_pid = getPidFromTable(start_big_buffer, maxBuffSize, 1, 0);
+                   pcr_pid = getPidFromTable(start_big_buffer, maxBuffSize, 0, pmt_pid);
+                   if (pcr_pid != 0) {
+                       std::cout << "pid = " <<std::to_string(pcr_pid) << std::endl;
+                       delete [] start_big_buffer;
+                   } else {
+                       std::cout << "pid = -1" << std::endl;
+                       big_buffer = start_big_buffer;
+                       maxBuffCounter = 0; //udp packages counter to buffer
+                   }
+               }
+           }
+           else {
+               //error_flag = 1;
+
+               //checkCC(&buffer[header_size], &pcr_pid, status); //old
+               checkCC(&rtp_package_buff[header_size], &pcr_pid, status-header_size);
+           }
+           //std::cout << QString::number(seq).toStdString() << "      "<< QString::number(seq).toStdString() <<  "\n";
+
+
+
+           /*
            if (!pcr_pid) {
                if (maxBuffCounter++ < PACKETS_TO_MAX_BUFFER) {
                    for (int i = header_size; i < status; i++) {
@@ -253,6 +299,7 @@ int main(int argc, char *argv[])
                checkCC(&rtp_package_buff[header_size], &pcr_pid, status-header_size);
            }
            //std::cout << QString::number(seq).toStdString() << "      "<< QString::number(seq).toStdString() <<  "\n";
+           */
        }
        if (status == -1) {
            if (streamStatus != 0) {
