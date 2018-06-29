@@ -21,8 +21,10 @@
 #include <iomanip>
 #include <fstream>
 
+
 #define RTP_PACKAGE_SIZE 1328 // Max UDP Packet size is 64 Kbyte //was 65536
 #define VIDEO_PID_IDENTIFY_REQUIRED_SIZE 2097152 // 2MB buffer to identify a video pid
+#define DEFAULT_TS_PACKET_SIZE 188
 
 
 
@@ -33,7 +35,6 @@
 #define PACKETS_TO_MAX_BUFFER 2000
 //#define BYTES_TO_COPY 5
 
-#define DEFAULT_TS_PACKET_SIZE 188
 #define DEFAULT_UPDATE_TIME 60
 #define DEFAULT_SLEEP_TIME 5
 #define CHECK_NO_DATA_USLEEP 1000000
@@ -67,7 +68,10 @@ bool justStart = 1;
 
 int8_t cc = -1;
 int8_t ecc = -1;
-bool ccErrorOccurcs = 0;
+bool cc_error_occurs = 0;
+
+
+//bool ccErrorOccurcs = 0;
 time_t lastErrorTime = time(NULL);
 //uint8_t slidingArr[BYTES_TO_COPY] = {0};
 int addressIndex, portIndex, idIndex, nameIndex, reportLinkIndex, minBitrateIndex;
@@ -77,10 +81,7 @@ CURL *curl;
 int needToUpdateStatus = 0;
 //int errorByte = 0;
 
-//scrambling control
-int lastScrambled = -1;
-int scrambled = -1;
-int scrambledStatus = -1;
+
 
 // Get current date/time, format is YYYY-MM-DD.HH:mm:ss
 const std::string currentDateTime() {
@@ -186,7 +187,6 @@ int main(int argc, char *argv[])
    uint maxBuffSize = 0; //maxBuffSize
 
 
-
    for(;;){
        // read data from the socket
        status = recvfrom(sock, rtp_package_buff, RTP_PACKAGE_SIZE, 0,
@@ -222,53 +222,36 @@ int main(int argc, char *argv[])
                eseq = seq;
            }
 
+           // if pcr_pid doesn't exist
            if (!pcr_pid) {
+               // if the video_pid_identify_buffer is NOT ENOUGHT to find a video pid
                if (video_pid_identify_buffer_size < VIDEO_PID_IDENTIFY_REQUIRED_SIZE) {
+                   // copying data read on this iteration to the video_pid_identify_buffer
                    for (int i = header_size; i < status; i++) {
                        *video_pid_identify_buffer++ = rtp_package_buff[i];
                        video_pid_identify_buffer_size++;
                    }
+               // the video_pid_identify_buffer is ENOUGHT to find a video pid
                } else {
                    uint16_t pmt_pid = getPidFromTable(start_big_buffer, video_pid_identify_buffer_size, 1, 0);
                    pcr_pid = getPidFromTable(start_big_buffer, video_pid_identify_buffer_size, 0, pmt_pid);
+                   // pcr_pid found
                    if (pcr_pid != 0) {
-                       std::cout << "pid = " <<std::to_string(pcr_pid) << std::endl;
+                       std::cout << "pid = " << std::to_string(pcr_pid) << std::endl;
                        delete [] start_big_buffer; //???
+                   // pcr_pid not found
                    } else {
                        std::cout << "pid = -1" << std::endl;
                        video_pid_identify_buffer = start_big_buffer;
                        video_pid_identify_buffer_size = 0;
                    }
                }
-           }
-
-
-           if (!pcr_pid) {
-               if (maxBuffCounter++ < PACKETS_TO_MAX_BUFFER) {
-                   for (int i = header_size; i < status; i++) {
-                       *big_buffer++ = rtp_package_buff[i];
-                       maxBuffSize++;
-                   }
-               } else {
-                   uint16_t pmt_pid = getPidFromTable(start_big_buffer, maxBuffSize, 1, 0);
-                   pcr_pid = getPidFromTable(start_big_buffer, maxBuffSize, 0, pmt_pid);
-                   if (pcr_pid != 0) {
-                       std::cout << "pid = " <<std::to_string(pcr_pid) << std::endl;
-                       delete [] start_big_buffer;
-                   } else {
-                       std::cout << "pid = -1" << std::endl;
-                       big_buffer = start_big_buffer;
-                       maxBuffCounter = 0; //udp packages counter to buffer
-                   }
-               }
-           }
-           else {
-               //error_flag = 1;
-
-               //checkCC(&buffer[header_size], &pcr_pid, status); //old
+           // pcr_pid is exist
+           } else {
                checkCC(&rtp_package_buff[header_size], &pcr_pid, status-header_size);
            }
            //std::cout << QString::number(seq).toStdString() << "      "<< QString::number(seq).toStdString() <<  "\n";
+
 
 
 
@@ -468,10 +451,6 @@ void checkCC(uint8_t *buffer, uint16_t *pid, int size) {
             header_dw += *(buffer+i+2+tsPacketNumber*DEFAULT_TS_PACKET_SIZE);
             header_dw <<= 8;
             header_dw += *(buffer+i+3+tsPacketNumber*DEFAULT_TS_PACKET_SIZE);
-
-
-
-
             uint8_t discontinuity_indicator = 0;
             //find discontinuity indicator
             if (header_dw & 0x20 && *(buffer+i+4+tsPacketNumber*DEFAULT_TS_PACKET_SIZE)) { //??? 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
@@ -481,23 +460,10 @@ void checkCC(uint8_t *buffer, uint16_t *pid, int size) {
                 if (cc == -1 || discontinuity_indicator) {
                     ecc = header_dw & 0xf;
                 }
-
-                //scrabling control
-                scrambled = (header_dw & 0xC0) ? 1 : 0;
-
-                //int tmp = scrambled;
-                if (scrambled != lastScrambled) {
-                    if (scrambledStatus == -1) {
-                        lastScrambled = scrambled;
-                        scrambledStatus = scrambled;
-                        std::cerr << std::to_string(scrambledStatus) << std::endl;
-                    }
-                }
-
                 cc = header_dw & 0xf;
                 if (ecc != cc) {
-                    if (!ccErrorOccurcs) {
-                        ccErrorOccurcs = 1;
+                    if (!cc_error_occurs) {
+                        cc_error_occurs = 1;
                     } else {
                         ccCounter++;
                         ecc = cc+1;
@@ -507,7 +473,7 @@ void checkCC(uint8_t *buffer, uint16_t *pid, int size) {
                         }
                     }
                 } else {
-                    ccErrorOccurcs = 0;
+                    cc_error_occurs = 0;
                     ecc++;
                     if (ecc > 15) {
                         ecc = 0;
