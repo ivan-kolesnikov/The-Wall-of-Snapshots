@@ -26,6 +26,8 @@
 #define AMOUNT_TS_PACKETS_IN_RTP_PACKET 7
 #define MIN_RTP_HEADER_SIZE 12
 #define MAX_RTP_HEADER_SIZE 76 // 12+4*16
+#define READ_N_PACKAGES_PER_ITERATION 10
+#define READ_N_BYTES_PER_ITERATION READ_N_PACKAGES_PER_ITERATION*(MIN_RTP_HEADER_SIZE+DEFAULT_TS_PACKET_SIZE*AMOUNT_TS_PACKETS_IN_RTP_PACKET)
 
 
 
@@ -192,9 +194,103 @@ int main(int argc, char *argv[])
 
 
 
+   int read_bytes = 0;
+   uint8_t rtp_packages_buff[READ_N_BYTES_PER_ITERATION];
    // continuety counter for rtp packages
    uint16_t eseq = 0;
    uint16_t seq = 0;
+   int udp_error_raise_counter = 0;
+   uint udp_lost_packages_counter = 0;
+   uint16_t pcr_pid = 0;
+   uint16_t pmt_pid = 0;
+
+
+   while (true)
+   {
+       // read data from the socket
+       read_bytes = recvfrom(sock, rtp_packages_buff, READ_N_BYTES_PER_ITERATION, 0, (struct sockaddr *)&saddr, &socklen);
+       if (read_bytes > 0)
+       {
+           // for each byte
+           for (int byte_index = 0; byte_index < READ_N_BYTES_PER_ITERATION; byte_index++)
+           {
+               // for each rtp package
+               for (int rtp_package_index = 0; rtp_package_index < READ_N_PACKAGES_PER_ITERATION; rtp_package_index++)
+               {
+                   // found rtp counter and check the order
+                   seq = (rtp_packages_buff[2+byte_index] << 8)+rtp_packages_buff[3+byte_index];
+                   if (!eseq && seq)
+                   {
+                       eseq = seq;
+                   } else
+                   {
+                       eseq++;
+                   }
+
+                   if (seq != eseq)
+                   {
+                       int delta_seq_eseq = (seq-eseq);
+                       if (delta_seq_eseq < 0)
+                       {
+                           delta_seq_eseq = delta_seq_eseq + 65535;
+                       }
+                       udp_lost_packages_counter += delta_seq_eseq;
+                       udp_error_raise_counter++;
+                       //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
+                       eseq = seq;
+                   }
+
+                   // if pcr_pid doesn't exist
+                   if (!pcr_pid)
+                   {
+                       // if pmt_pid doesn't exist
+                       if (!pmt_pid)
+                       {
+                           pmt_pid = getPidFromTable(rtp_packages_buff[byte_index+MIN_RTP_HEADER_SIZE], 1, 0);
+                       // try to find pcr_pid
+                       } else
+                       {
+                           pcr_pid = getPidFromTable(rtp_packages_buff[byte_index+MIN_RTP_HEADER_SIZE], 0, pmt_pid);
+                       }
+                   // try to find cc value
+                   } else
+                   {
+
+                   }
+
+               }
+           }
+
+
+
+
+       }
+
+
+
+
+   }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
    int bytes_read = 0;
    bool stream_status = 0;
@@ -204,7 +300,7 @@ int main(int argc, char *argv[])
 
    uint16_t pcr_pid = 0;
 
-   uint8_t rtp_package_buff[RTP_PACKAGE_SIZE];
+   uint8_t rtp_package_buff[READ_N_BYTES_PER_ITERATION];
 
    uint8_t *video_pid_identify_buffer = new uint8_t[VIDEO_PID_IDENTIFY_REQUIRED_SIZE + RTP_PACKAGE_SIZE]; //big_buffer
    uint8_t *start_big_buffer = video_pid_identify_buffer; // start_big_buffer
@@ -423,93 +519,103 @@ void sendStatusThread(char *argv[])
 
 
 
-uint16_t getPidFromTable(uint8_t *p_big_buffer, uint buffer_size, bool is_pmt_pid, uint16_t table_pid) {
+uint16_t getPidFromTable(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid) {
     uint32_t ts_header_dw = 0x47;
     uint16_t program_number = 0;
     uint16_t result_pid = 0;
     uint pmt_while_counter = 0;
     uint8_t byte_from_buff = 0;
-    while (p_big_buffer - start_big_buffer < buffer_size) {
-        if (*p_big_buffer++ == 0x47) {
-            for (int i = 0; i < 3; i++) {
-                byte_from_buff = *p_big_buffer++;
-                ts_header_dw <<=8;
-                ts_header_dw += byte_from_buff;
-            }
-            if (!(ts_header_dw & 0x800000) && ts_header_dw & 0x400000 && (ts_header_dw & 0x1fff00)>>8 == table_pid) {
-                p_big_buffer += 9;
-                if (is_pmt_pid) {
-                    while (!program_number) {
-                        program_number += *p_big_buffer++;
-                        program_number <<=8;
-                        program_number += *p_big_buffer++;
-                        if (!program_number) {
-                            pmt_while_counter++;
-                        }
-                        if (pmt_while_counter > 10) {
-                            return 0;
-                        }
+    if (*p_ts_package == 0x47)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            byte_from_buff = *p_ts_package++;
+            ts_header_dw <<=8;
+            ts_header_dw += byte_from_buff;
+        }
+        if (!(ts_header_dw & 0x800000) && ts_header_dw & 0x400000 && (ts_header_dw & 0x1fff00)>>8 == table_pid)
+        {
+            p_ts_package += 9;
+            if (is_pmt_pid)
+            {
+                while (!program_number)
+                {
+                    program_number += *p_ts_package++;
+                    program_number <<=8;
+                    program_number += *p_ts_package++;
+                    if (!program_number)
+                    {
+                        pmt_while_counter++;
+                    }
+                    if (pmt_while_counter > 10)
+                    {
+                        return 0;
                     }
                 }
-                result_pid = *p_big_buffer++;
-                result_pid <<=8;
-                result_pid += *p_big_buffer++;
-                result_pid &= 0x1FFF;
-                return result_pid;
-            } else {
-                ts_header_dw = 0x47;
             }
+            result_pid = *p_ts_package++;
+            result_pid <<=8;
+            result_pid += *p_ts_package++;
+            result_pid &= 0x1FFF;
+            return result_pid;
+        } else
+        {
+            return 0;
         }
     }
     return result_pid;
 }
 
-void checkCC(uint8_t *buffer, uint16_t *pid, int size) {
-    int tsPacketsCount = size/DEFAULT_TS_PACKET_SIZE;
-    int tsPacketNumber = 0;
-    int i = 0;
+void checkCC(uint8_t *p_ts_package, uint16_t *pid) {
     uint32_t header_dw = 0;
-    while (i+tsPacketNumber*DEFAULT_TS_PACKET_SIZE < size-5 && tsPacketNumber < tsPacketsCount) {
-        if (*(buffer+i+tsPacketNumber*DEFAULT_TS_PACKET_SIZE) == 0x47) {
-            header_dw = *(buffer+i+1+tsPacketNumber*DEFAULT_TS_PACKET_SIZE);
-            header_dw <<= 8;
-            header_dw += *(buffer+i+2+tsPacketNumber*DEFAULT_TS_PACKET_SIZE);
-            header_dw <<= 8;
-            header_dw += *(buffer+i+3+tsPacketNumber*DEFAULT_TS_PACKET_SIZE);
-            uint8_t discontinuity_indicator = 0;
-            //find discontinuity indicator
-            if (header_dw & 0x20 && *(buffer+i+4+tsPacketNumber*DEFAULT_TS_PACKET_SIZE)) { //??? 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
-                discontinuity_indicator = (*(buffer+i+5+tsPacketNumber*DEFAULT_TS_PACKET_SIZE)) & 0x80;
+    static int8_t cc = -1;
+    static int8_t ecc = -1;
+    static bool cc_error_occurs = 0;
+    int has_cc_error = 0;
+
+    if (*p_ts_package == 0x47)
+    {
+        header_dw = *(p_ts_package+1);
+        header_dw <<= 8;
+        header_dw = *(p_ts_package+2);
+        header_dw <<= 8;
+        header_dw = *(p_ts_package+3);
+        uint8_t discontinuity_indicator = 0;
+        //find discontinuity indicator
+        if (header_dw & 0x20 && *(p_ts_package+4)) { //??? 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
+            discontinuity_indicator = (*(p_ts_package+4)) & 0x80;
+        }
+        if (header_dw & 0x10 && (header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator) {
+            if (cc == -1 || discontinuity_indicator)
+            {
+                ecc = header_dw & 0xf;
             }
-            if (header_dw & 0x10 && (header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator) {
-                if (cc == -1 || discontinuity_indicator) {
-                    ecc = header_dw & 0xf;
-                }
-                cc = header_dw & 0xf;
-                if (ecc != cc) {
-                    if (!cc_error_occurs) {
-                        cc_error_occurs = 1;
-                    } else {
-                        ccCounter++;
-                        ecc = cc+1;
-                        //std::cout << "Error!!!" << "\n";
-                        if (ecc > 15) {
-                            ecc = 0;
-                        }
-                    }
-                } else {
-                    cc_error_occurs = 0;
-                    ecc++;
-                    if (ecc > 15) {
+            cc = header_dw & 0xf;
+            if (ecc != cc)
+            {
+                if (!cc_error_occurs)
+                {
+                    cc_error_occurs = 1;
+                } else
+                {
+                    has_cc_error = 1;
+                    ecc = cc+1;
+                    //std::cout << "Error!!!" << "\n";
+                    if (ecc > 15)
+                    {
                         ecc = 0;
                     }
                 }
+            } else
+            {
+                cc_error_occurs = 0;
+                ecc++;
+                if (ecc > 15)
+                {
+                    ecc = 0;
+                }
             }
-            i = 0;
-            tsPacketNumber++;
-            continue;
         }
-        i++;
     }
 }
 
