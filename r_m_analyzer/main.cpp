@@ -22,9 +22,34 @@
 #include <fstream>
 
 
-#define RTP_PACKAGE_SIZE 1328 // Max UDP Packet size is 64 Kbyte //was 65536
-#define VIDEO_PID_IDENTIFY_REQUIRED_SIZE 2097152 // 2MB buffer to identify a video pid
 #define DEFAULT_TS_PACKET_SIZE 188
+#define AMOUNT_TS_PACKETS_IN_RTP_PACKET 7
+#define MIN_RTP_HEADER_SIZE 12
+#define MAX_RTP_HEADER_SIZE 76 // 12+4*16
+
+
+
+
+
+
+#define RTP_HEADER_SIZE 12
+
+
+
+
+#define RTP_PACKAGE_SIZE DEFAULT_TS_PACKET_SIZE*AMOUNT_TS_PACKETS_IN_RTP_PACKET+RTP_HEADER_SIZE //1328
+// how many rtp packeges need to read by iteration
+#define READ_RTP_PACKETS_BY_ITERATION 10
+
+
+//#define RTP_PACKAGE_SIZE 1328 // Max UDP Packet size is 64 Kbyte //was 65536
+
+
+
+
+
+#define VIDEO_PID_IDENTIFY_REQUIRED_SIZE 2097152 // 2MB buffer to identify a video pid
+
 
 
 
