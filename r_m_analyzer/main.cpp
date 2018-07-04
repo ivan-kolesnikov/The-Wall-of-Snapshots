@@ -26,76 +26,18 @@
 #define AMOUNT_TS_PACKETS_IN_RTP_PACKET 7
 #define MIN_RTP_HEADER_SIZE 12
 #define MAX_RTP_HEADER_SIZE 76 // 12+4*16
-#define READ_N_PACKAGES_PER_ITERATION 10
-#define READ_N_BYTES_PER_ITERATION READ_N_PACKAGES_PER_ITERATION*(MIN_RTP_HEADER_SIZE+DEFAULT_TS_PACKET_SIZE*AMOUNT_TS_PACKETS_IN_RTP_PACKET)
+#define READ_N_BYTES_PER_ITERATION MAX_RTP_HEADER_SIZE+AMOUNT_TS_PACKETS_IN_RTP_PACKET*DEFAULT_TS_PACKET_SIZE
 
+int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid);
+long int epoch_ms();
 
-
-
-
-
-#define RTP_HEADER_SIZE 12
-
-
-
-
-#define RTP_PACKAGE_SIZE DEFAULT_TS_PACKET_SIZE*AMOUNT_TS_PACKETS_IN_RTP_PACKET+RTP_HEADER_SIZE //1328
-// how many rtp packeges need to read by iteration
-#define READ_RTP_PACKETS_BY_ITERATION 10
-
-
-//#define RTP_PACKAGE_SIZE 1328 // Max UDP Packet size is 64 Kbyte //was 65536
-
-
-
-
-
-#define VIDEO_PID_IDENTIFY_REQUIRED_SIZE 2097152 // 2MB buffer to identify a video pid
-
-
-
-
-
-
-
-
-#define PACKETS_TO_MAX_BUFFER 2000
-//#define BYTES_TO_COPY 5
-
-#define DEFAULT_UPDATE_TIME 60
-#define DEFAULT_SLEEP_TIME 5
-#define CHECK_NO_DATA_USLEEP 1000000
-#define RESPONSES_PER_DEFAULT_UPDATE_TIME 100
 
 
 void help();
-void checkCC(uint8_t *buffer, uint16_t *pid, int size);
+//void sendStatusThread(char *argv[]);
+uint16_t getPidFromTable(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid);
 
-void sendStatusThread(char *argv[]);
-uint16_t getPidFromTable(uint8_t *p_big_buffer, uint buffer_size, bool is_pmt_pid, uint16_t table_pid);
 
-//uint8_t *big_buffer = new uint8_t[RTP_PACKAGE_SIZE*PACKETS_TO_MAX_BUFFER];
-//uint8_t *start_big_buffer = big_buffer;
-
-//uint maxBuffCounter = 0;
-//uint maxBuffSize = 0;
-uint16_t pcr_pid = 0;
-uint ccCounter = 0;
-uint lostUdpPackagesCounter = 0;
-int udpRaiseCounter = 0;
-//int error_flag = 0;
-int streamStatus = -1;
-int bitrate = 0;
-int bitrateOneSec = 0;
-int fastBitrateOneSec = 0;
-int sleepCounter = 0;
-int notDDosCounter = RESPONSES_PER_DEFAULT_UPDATE_TIME;
-bool justStart = 1;
-//bool curlIsDiong = 0;
-
-int8_t cc = -1;
-int8_t ecc = -1;
-bool cc_error_occurs = 0;
 
 
 //bool ccErrorOccurcs = 0;
@@ -133,10 +75,16 @@ void create_hex_str(uint8_t *data, int len, std::string &tgt)
     tgt = ss.str();
 }
 
+long int epoch_ms()
+{
+    static struct timeval tp;
+    gettimeofday(&tp, NULL);
+    return tp.tv_sec * 1000 + tp.tv_usec / 1000;
+}
+
 
 int main(int argc, char *argv[])
 {
-    std::thread t(sendStatusThread, argv);
     //argv parsing
     for (int i = 1; i < argc-1; i++) {
         if (std::string(argv[i]) == "-a") {
@@ -158,266 +106,131 @@ int main(int argc, char *argv[])
         }
     }
 
-   int sock, status;
-   socklen_t socklen;
-   struct sockaddr_in saddr;
-   struct ip_mreq imreq;
-   // set content of struct saddr and imreq to zero
-   memset(&saddr, 0, sizeof(struct sockaddr_in));
-   memset(&imreq, 0, sizeof(struct ip_mreq));
-   // open a UDP socket
-   sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP); //was IPPROTO_IP
-   if ( sock < 0 )
-     perror("Error creating socket"), exit(0);
-   int enable = 1;
-   status = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-   saddr.sin_family = PF_INET;
-   // listen port
-   saddr.sin_port = htons(atoi(argv[portIndex]));
-   saddr.sin_addr.s_addr = inet_addr(argv[addressIndex]);
-   status = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
-   if ( status < 0 )
-     perror("Error binding socket to interface"), exit(0);
-   imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
-   imreq.imr_interface.s_addr = INADDR_ANY; // use DEFAULT interface
-   // JOIN multicast group on default interface
-   status = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-              (const void *)&imreq, sizeof(struct ip_mreq));
-   // set time to live for the socket
-   struct timeval timeout;
-   timeout.tv_sec = 0;
-   timeout.tv_usec = 900000; // 0.9 sec
-   status = setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
-   socklen = sizeof(struct sockaddr_in);
-   // log
-   std::cerr << currentDateTime() << " Capturing from: " << argv[addressIndex] << ":" << argv[portIndex] << " is started\n";
+    int sock, status;
+    socklen_t socklen;
+    struct sockaddr_in saddr;
+    struct ip_mreq imreq;
+    // set content of struct saddr and imreq to zero
+    memset(&saddr, 0, sizeof(struct sockaddr_in));
+    memset(&imreq, 0, sizeof(struct ip_mreq));
+    // open a UDP socket
+    sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP); //was IPPROTO_IP
+    if ( sock < 0 )
+      perror("Error creating socket"), exit(0);
+    int enable = 1;
+    status = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+    saddr.sin_family = PF_INET;
+    // listen port
+    saddr.sin_port = htons(atoi(argv[portIndex]));
+    saddr.sin_addr.s_addr = inet_addr(argv[addressIndex]);
+    status = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
+    if ( status < 0 )
+      perror("Error binding socket to interface"), exit(0);
+    imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
+    imreq.imr_interface.s_addr = INADDR_ANY; // use DEFAULT interface
+    // JOIN multicast group on default interface
+    status = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+               (const void *)&imreq, sizeof(struct ip_mreq));
+    // set time to live for the socket
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 900000; // 0.9 sec
+    status = setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
+    socklen = sizeof(struct sockaddr_in);
+    // log
+    std::cerr << currentDateTime() << " Capturing from: " << argv[addressIndex] << ":" << argv[portIndex] << " is started\n";
 
 
 
-   int read_bytes = 0;
-   uint8_t rtp_packages_buff[READ_N_BYTES_PER_ITERATION];
-   // continuety counter for rtp packages
-   uint16_t eseq = 0;
-   uint16_t seq = 0;
-   int udp_error_raise_counter = 0;
-   uint udp_lost_packages_counter = 0;
-   uint16_t pcr_pid = 0;
-   uint16_t pmt_pid = 0;
+    int read_bytes = 0;
+    int read_bytes_sum = 0;
+    int rtp_header_size = 0;
+    uint8_t rtp_packages_buff[READ_N_BYTES_PER_ITERATION];
+    // continuety counter for rtp packages
+    uint16_t eseq = 0;
+    uint16_t seq = 0;
+    int udp_error_raise_counter = 0;
+    uint udp_lost_packages_counter = 0;
+    uint16_t pcr_pid = 0;
+    uint16_t pmt_pid = 0;
+    int cc_error_raise_counter = 0;
+    long int last_report_time_ms = epoch_ms();
+    long int last_report_time_difference_ms = 0;
+    int bitrate_kbs = 0;
 
+    while (true)
+    {
+        // read data from the socket
+        read_bytes = recvfrom(sock, rtp_packages_buff, READ_N_BYTES_PER_ITERATION, 0, (struct sockaddr *)&saddr, &socklen);
+        if (read_bytes > 0)
+        {
+            // sum of bytes for the bitrate calculation
+            read_bytes_sum += read_bytes;
+            rtp_header_size = 12 + 4 * (rtp_packages_buff[0] & 16);
 
-   while (true)
-   {
-       // read data from the socket
-       read_bytes = recvfrom(sock, rtp_packages_buff, READ_N_BYTES_PER_ITERATION, 0, (struct sockaddr *)&saddr, &socklen);
-       if (read_bytes > 0)
-       {
-           // for each byte
-           for (int byte_index = 0; byte_index < READ_N_BYTES_PER_ITERATION; byte_index++)
-           {
-               // for each rtp package
-               for (int rtp_package_index = 0; rtp_package_index < READ_N_PACKAGES_PER_ITERATION; rtp_package_index++)
-               {
-                   // found rtp counter and check the order
-                   seq = (rtp_packages_buff[2+byte_index] << 8)+rtp_packages_buff[3+byte_index];
-                   if (!eseq && seq)
-                   {
-                       eseq = seq;
-                   } else
-                   {
-                       eseq++;
-                   }
+            // found rtp counter and check the order
+            seq = (rtp_packages_buff[2] << 8)+rtp_packages_buff[3];
+            if (!eseq && seq)
+            {
+                eseq = seq;
+            } else
+            {
+                eseq++;
+            }
 
-                   if (seq != eseq)
-                   {
-                       int delta_seq_eseq = (seq-eseq);
-                       if (delta_seq_eseq < 0)
-                       {
-                           delta_seq_eseq = delta_seq_eseq + 65535;
-                       }
-                       udp_lost_packages_counter += delta_seq_eseq;
-                       udp_error_raise_counter++;
-                       //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
-                       eseq = seq;
-                   }
-
-                   // if pcr_pid doesn't exist
-                   if (!pcr_pid)
-                   {
-                       // if pmt_pid doesn't exist
-                       if (!pmt_pid)
-                       {
-                           pmt_pid = getPidFromTable(rtp_packages_buff[byte_index+MIN_RTP_HEADER_SIZE], 1, 0);
-                       // try to find pcr_pid
-                       } else
-                       {
-                           pcr_pid = getPidFromTable(rtp_packages_buff[byte_index+MIN_RTP_HEADER_SIZE], 0, pmt_pid);
-                       }
-                   // try to find cc value
-                   } else
-                   {
-
-                   }
-
-               }
-           }
-
-
-
-
-       }
-
-
-
-
-   }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-   int bytes_read = 0;
-   bool stream_status = 0;
-
-   int udp_error_raise_counter = 0;
-   uint udp_lost_packages_counter = 0;
-
-   uint16_t pcr_pid = 0;
-
-   uint8_t rtp_package_buff[READ_N_BYTES_PER_ITERATION];
-
-   uint8_t *video_pid_identify_buffer = new uint8_t[VIDEO_PID_IDENTIFY_REQUIRED_SIZE + RTP_PACKAGE_SIZE]; //big_buffer
-   uint8_t *start_big_buffer = video_pid_identify_buffer; // start_big_buffer
-   uint video_pid_identify_buffer_size = 0; //maxBuffCounter
-   uint maxBuffSize = 0; //maxBuffSize
-
-
-   for(;;){
-       // read data from the socket
-       status = recvfrom(sock, rtp_package_buff, RTP_PACKAGE_SIZE, 0,
-                         (struct sockaddr *)&saddr, &socklen);
-       // new data has been received
-       if (status > 0) {
-           stream_status = 1;
-           bytes_read += status;
-
-           //bitrate += status;
-           //bitrateOneSec += status;
-           //fastBitrateOneSec += status;
-           /*if (streamStatus != 1) {
-               streamStatus = 1;
-           }*/
-           int header_size = 12 + 4 * (rtp_package_buff[0] & 16);
-
-           seq = (rtp_package_buff[2] << 8)+rtp_package_buff[3];
-           if (!eseq && seq) {
-               eseq = seq;
-           } else {
-               eseq++;
-           }
-
-           if (seq != eseq) {
-               int delta_seq_eseq = (seq-eseq);
-               if (delta_seq_eseq < 0) {
-                   delta_seq_eseq = delta_seq_eseq + 65535;
-               }
-               udp_lost_packages_counter += delta_seq_eseq;
-               udp_error_raise_counter++;
-               //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
-               eseq = seq;
-           }
-
-           // if pcr_pid doesn't exist
-           if (!pcr_pid) {
-               // if the video_pid_identify_buffer is NOT ENOUGHT to find a video pid
-               if (video_pid_identify_buffer_size < VIDEO_PID_IDENTIFY_REQUIRED_SIZE) {
-                   // copying data read on this iteration to the video_pid_identify_buffer
-                   for (int i = header_size; i < status; i++) {
-                       *video_pid_identify_buffer++ = rtp_package_buff[i];
-                       video_pid_identify_buffer_size++;
-                   }
-               // the video_pid_identify_buffer is ENOUGHT to find a video pid
-               } else {
-                   uint16_t pmt_pid = getPidFromTable(start_big_buffer, video_pid_identify_buffer_size, 1, 0);
-                   pcr_pid = getPidFromTable(start_big_buffer, video_pid_identify_buffer_size, 0, pmt_pid);
-                   // pcr_pid found
-                   if (pcr_pid != 0) {
-                       std::cout << "pid = " << std::to_string(pcr_pid) << std::endl;
-                       delete [] start_big_buffer; //???
-                   // pcr_pid not found
-                   } else {
-                       std::cout << "pid = -1" << std::endl;
-                       video_pid_identify_buffer = start_big_buffer;
-                       video_pid_identify_buffer_size = 0;
-                   }
-               }
-           // pcr_pid is exist
-           } else {
-               checkCC(&rtp_package_buff[header_size], &pcr_pid, status-header_size);
-           }
-           //std::cout << QString::number(seq).toStdString() << "      "<< QString::number(seq).toStdString() <<  "\n";
-
-
-
-
-           /*
-           if (!pcr_pid) {
-               if (maxBuffCounter++ < PACKETS_TO_MAX_BUFFER) {
-                   for (int i = header_size; i < status; i++) {
-                       *big_buffer++ = rtp_package_buff[i];
-                       maxBuffSize++;
-                   }
-               } else {
-                   uint16_t pmt_pid = getPidFromTable(start_big_buffer, maxBuffSize, 1, 0);
-                   pcr_pid = getPidFromTable(start_big_buffer, maxBuffSize, 0, pmt_pid);
-                   if (pcr_pid != 0) {
-                       std::cout << "pid = " <<std::to_string(pcr_pid) << std::endl;
-                       delete [] start_big_buffer;
-                   } else {
-                       std::cout << "pid = -1" << std::endl;
-                       big_buffer = start_big_buffer;
-                       maxBuffCounter = 0;
-                   }
-               }
-           }
-           else {
-               //error_flag = 1;
-
-               //checkCC(&buffer[header_size], &pcr_pid, status); //old
-               checkCC(&rtp_package_buff[header_size], &pcr_pid, status-header_size);
-           }
-           //std::cout << QString::number(seq).toStdString() << "      "<< QString::number(seq).toStdString() <<  "\n";
-           */
-       }
-       if (status == -1) {
-           if (streamStatus != 0) {
-               streamStatus = 0;
-           }
-       }
-   }
-   // shutdown socket
-   shutdown(sock, 2);
-   // close socket
-   close(sock);
-   return 0;
+            if (seq != eseq)
+            {
+                int delta_seq_eseq = (seq-eseq);
+                if (delta_seq_eseq < 0)
+                {
+                    delta_seq_eseq = delta_seq_eseq + 65535;
+                }
+                udp_lost_packages_counter += delta_seq_eseq;
+                udp_error_raise_counter++;
+                //std::cerr << currentDateTime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
+                eseq = seq;
+            }
+            // for each ts package
+            for (int ts_package_index = 0; ts_package_index < AMOUNT_TS_PACKETS_IN_RTP_PACKET; ts_package_index++)
+            {
+                // if pcr_pid doesn't exist
+                if (!pcr_pid)
+                {
+                    // if pmt_pid doesn't exist
+                    if (!pmt_pid)
+                    {
+                        pmt_pid = getPidFromTable(&rtp_packages_buff[rtp_header_size+ts_package_index*DEFAULT_TS_PACKET_SIZE], 1, 0);
+                    // try to find pcr_pid
+                    } else
+                    {
+                        pcr_pid = getPidFromTable(&rtp_packages_buff[rtp_header_size+ts_package_index*DEFAULT_TS_PACKET_SIZE], 0, pmt_pid);
+                    }
+                // try to find cc value
+                } else
+                {
+                    cc_error_raise_counter += check_ts_cc(&rtp_packages_buff[rtp_header_size+ts_package_index*DEFAULT_TS_PACKET_SIZE], &pcr_pid);
+                }
+            }
+        }
+        // find difference between now and the last_report_time_ms
+        last_report_time_difference_ms = epoch_ms() - last_report_time_ms;
+        // need to send the report
+        if (last_report_time_difference_ms > 1000)
+        {
+            bitrate_kbs = read_bytes_sum*8/last_report_time_difference_ms*1000/1024;
+            std::cout << std::to_string(bitrate_kbs) << " " << std::to_string(cc_error_raise_counter) << " " << std::to_string(udp_error_raise_counter)<<std::endl;
+            read_bytes_sum = 0;
+            last_report_time_ms = epoch_ms();
+        }
+    }
+    // shutdown socket
+    shutdown(sock, 2);
+    // close socket
+    close(sock);
+    return 0;
 }
 
+/*
 void sendStatusThread(char *argv[])
 {
     time_t seconds1, seconds2, secondsDelta;
@@ -516,7 +329,7 @@ void sendStatusThread(char *argv[])
         }
     }
 }
-
+*/
 
 
 uint16_t getPidFromTable(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid) {
@@ -525,7 +338,7 @@ uint16_t getPidFromTable(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_
     uint16_t result_pid = 0;
     uint pmt_while_counter = 0;
     uint8_t byte_from_buff = 0;
-    if (*p_ts_package == 0x47)
+    if (*p_ts_package++ == 0x47)
     {
         for (int i = 0; i < 3; i++)
         {
@@ -566,7 +379,7 @@ uint16_t getPidFromTable(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_
     return result_pid;
 }
 
-void checkCC(uint8_t *p_ts_package, uint16_t *pid) {
+int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
     uint32_t header_dw = 0;
     static int8_t cc = -1;
     static int8_t ecc = -1;
@@ -581,8 +394,9 @@ void checkCC(uint8_t *p_ts_package, uint16_t *pid) {
         header_dw <<= 8;
         header_dw = *(p_ts_package+3);
         uint8_t discontinuity_indicator = 0;
-        //find discontinuity indicator
-        if (header_dw & 0x20 && *(p_ts_package+4)) { //??? 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
+        // if discontinuity indicator exists
+        if (header_dw & 0x20 && *(p_ts_package+4)) {
+            // 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
             discontinuity_indicator = (*(p_ts_package+4)) & 0x80;
         }
         if (header_dw & 0x10 && (header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator) {
@@ -617,6 +431,7 @@ void checkCC(uint8_t *p_ts_package, uint16_t *pid) {
             }
         }
     }
+    return has_cc_error;
 }
 
 void help() {
