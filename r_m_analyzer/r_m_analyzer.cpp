@@ -13,7 +13,7 @@ int main(int argc, char *argv[])
     int read_bytes = 0;
     int read_bytes_sum = 0;
     int rtp_header_size = 0;
-    uint8_t rtp_packages_buff[READ_N_BYTES_PER_ITERATION];
+    uint8_t rtp_package_buff[READ_N_BYTES_PER_ITERATION];
     int udp_error_raise_counter = 0;
     uint udp_lost_packages_counter = 0;
     uint16_t pcr_pid = 0;
@@ -26,14 +26,14 @@ int main(int argc, char *argv[])
     while (true)
     {
         // read data from the socket
-        read_bytes = recvfrom(sock, rtp_packages_buff, READ_N_BYTES_PER_ITERATION, 0, (struct sockaddr *)&saddr, &socklen);
+        read_bytes = recvfrom(sock, rtp_package_buff, READ_N_BYTES_PER_ITERATION, 0, (struct sockaddr *)&saddr, &socklen);
         if (read_bytes > 0)
         {
             // sum of bytes for the bitrate calculation
             read_bytes_sum += read_bytes;
-            rtp_header_size = 12 + 4 * (rtp_packages_buff[0] & 16);
+            rtp_header_size = 12 + 4 * (rtp_package_buff[0] & 16);
             // check RTP header cc
-            int lost_udp_packages = check_rtp_cc(rtp_packages_buff);
+            int lost_udp_packages = check_rtp_cc(rtp_package_buff);
             // if any RTP packages were lost
             if (lost_udp_packages)
             {
@@ -41,7 +41,7 @@ int main(int argc, char *argv[])
                 udp_error_raise_counter++;
             }
             // for each ts package
-            for (int ts_package_index = 0; ts_package_index < AMOUNT_TS_PACKETS_IN_RTP_PACKET; ts_package_index++)
+            for (int ts_package_index = 0; ts_package_index < AMOUNT_TS_PACKAGES_IN_RTP_PACKAGE; ts_package_index++)
             {
                 // if pcr_pid doesn't exist
                 if (!pcr_pid)
@@ -49,19 +49,19 @@ int main(int argc, char *argv[])
                     // if pmt_pid doesn't exist
                     if (!pmt_pid)
                     {
-                        pmt_pid = get_pid_from_table(&rtp_packages_buff[rtp_header_size + \
-                                ts_package_index*DEFAULT_TS_PACKET_SIZE], 1, 0);
+                        pmt_pid = get_pid_from_table(&rtp_package_buff[rtp_header_size + \
+                                ts_package_index*DEFAULT_TS_PACKAGE_SIZE], 1, 0);
                     // try to find pcr_pid
                     } else
                     {
-                        pcr_pid = get_pid_from_table(&rtp_packages_buff[rtp_header_size + \
-                                ts_package_index*DEFAULT_TS_PACKET_SIZE], 0, pmt_pid);
+                        pcr_pid = get_pid_from_table(&rtp_package_buff[rtp_header_size + \
+                                ts_package_index*DEFAULT_TS_PACKAGE_SIZE], 0, pmt_pid);
                     }
                 // try to find cc value
                 } else
                 {
-                    cc_error_raise_counter += check_ts_cc(&rtp_packages_buff[rtp_header_size + \
-                            ts_package_index*DEFAULT_TS_PACKET_SIZE], &pcr_pid);
+                    cc_error_raise_counter += check_ts_cc(&rtp_package_buff[rtp_header_size + \
+                            ts_package_index*DEFAULT_TS_PACKAGE_SIZE], &pcr_pid);
                 }
             }
         }
@@ -165,7 +165,7 @@ int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
         // if discontinuity indicator exists
         if (header_dw & 0x20 && *(p_ts_package+4)) {
             // 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
-            discontinuity_indicator = (*(p_ts_package+4)) & 0x80;
+            discontinuity_indicator = (*(p_ts_package+5)) & 0x80;
         }
         if (header_dw & 0x10 && (header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator) {
             if (cc == -1 || discontinuity_indicator)

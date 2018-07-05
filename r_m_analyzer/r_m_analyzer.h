@@ -8,12 +8,12 @@
 #include <unistd.h>
 #include "r_m_analyzer.h"
 
-#define DEFAULT_TS_PACKET_SIZE 188
-#define AMOUNT_TS_PACKETS_IN_RTP_PACKET 7
+#define DEFAULT_TS_PACKAGE_SIZE 188
+#define AMOUNT_TS_PACKAGES_IN_RTP_PACKAGE 7
 #define MIN_RTP_HEADER_SIZE 12
 #define MAX_RTP_HEADER_SIZE 76 // 12+4*16
 #define READ_N_BYTES_PER_ITERATION MAX_RTP_HEADER_SIZE + \
-        AMOUNT_TS_PACKETS_IN_RTP_PACKET * DEFAULT_TS_PACKET_SIZE
+        AMOUNT_TS_PACKAGES_IN_RTP_PACKAGE * DEFAULT_TS_PACKAGE_SIZE
 
 void argv_parser(int *argc, char *argv[]);
 void join_mcast(int *sock, socklen_t *socklen, struct sockaddr_in *saddr, char *argv[]);
