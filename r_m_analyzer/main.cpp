@@ -1,7 +1,7 @@
-#include <string.h>
 #include <iostream>
-#include <sys/time.h>
 #include <arpa/inet.h>
+#include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #define DEFAULT_TS_PACKET_SIZE 188
@@ -79,12 +79,14 @@ int main(int argc, char *argv[])
     // set time to live for the socket
     struct timeval timeout;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 900000; // 0.9 sec
+    timeout.tv_usec = 100000; // 0.1 sec
     status = setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
     socklen = sizeof(struct sockaddr_in);
     // log
     std::cout << current_datetime() << " Capturing from: " << argv[addressIndex] << ":" << argv[portIndex]
               << " is started" << std::endl;
+
+
     int read_bytes = 0;
     int read_bytes_sum = 0;
     int rtp_header_size = 0;
@@ -142,16 +144,19 @@ int main(int argc, char *argv[])
                     // if pmt_pid doesn't exist
                     if (!pmt_pid)
                     {
-                        pmt_pid = get_pid_from_table(&rtp_packages_buff[rtp_header_size+ts_package_index*DEFAULT_TS_PACKET_SIZE], 1, 0);
+                        pmt_pid = get_pid_from_table(&rtp_packages_buff[rtp_header_size + \
+                                ts_package_index*DEFAULT_TS_PACKET_SIZE], 1, 0);
                     // try to find pcr_pid
                     } else
                     {
-                        pcr_pid = get_pid_from_table(&rtp_packages_buff[rtp_header_size+ts_package_index*DEFAULT_TS_PACKET_SIZE], 0, pmt_pid);
+                        pcr_pid = get_pid_from_table(&rtp_packages_buff[rtp_header_size + \
+                                ts_package_index*DEFAULT_TS_PACKET_SIZE], 0, pmt_pid);
                     }
                 // try to find cc value
                 } else
                 {
-                    cc_error_raise_counter += check_ts_cc(&rtp_packages_buff[rtp_header_size+ts_package_index*DEFAULT_TS_PACKET_SIZE], &pcr_pid);
+                    cc_error_raise_counter += check_ts_cc(&rtp_packages_buff[rtp_header_size + \
+                            ts_package_index*DEFAULT_TS_PACKET_SIZE], &pcr_pid);
                 }
             }
         }
