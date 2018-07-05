@@ -85,6 +85,7 @@ int main(int argc, char *argv[])
                 std::cout << " CC_errors: " << std::to_string(cc_error_raise_counter);
             }
             std::cout << " PCR_pid: " << std::to_string(pcr_pid);
+            std::cout << " lost_pcr_pid_continuously_counter: " << std::to_string(lost_pcr_pid_continuously_counter); //!!!test
             std::cout << std::endl;
             // reset variables
             read_bytes_sum = 0;
@@ -92,6 +93,12 @@ int main(int argc, char *argv[])
             udp_lost_packages_counter = 0;
             cc_error_raise_counter = 0;
             last_report_time_ms = epoch_ms();
+            // if need to update pcr_pid
+            if (lost_pcr_pid_continuously_counter > MAX_LOST_PCR_PID_CONTINUOUSLY_VALUE)
+            {
+                pmt_pid = 0;
+                pcr_pid = 0;
+            }
         }
     }
     leave_mcast(&sock);
@@ -148,31 +155,32 @@ uint16_t get_pid_from_table(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t tab
 
 
 int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
-    uint32_t header_dw = 0;
+    uint32_t ts_header_dw = 0x47;
     static int8_t cc = -1;
     static int8_t ecc = -1;
     static bool cc_error_occurs = 0;
     int has_cc_error = 0;
 
-    if (*p_ts_package == 0x47)
+    if (*p_ts_package++ == 0x47)
     {
-        header_dw = *(p_ts_package+1);
-        header_dw <<= 8;
-        header_dw = *(p_ts_package+2);
-        header_dw <<= 8;
-        header_dw = *(p_ts_package+3);
+        for (int i = 0; i < 3; i++)
+        {
+            ts_header_dw <<=8;
+            ts_header_dw += *p_ts_package++;
+        }
         uint8_t discontinuity_indicator = 0;
         // if discontinuity indicator exists
-        if (header_dw & 0x20 && *(p_ts_package+4)) {
+        if (ts_header_dw & 0x20 && *p_ts_package++) {
             // 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
-            discontinuity_indicator = (*(p_ts_package+5)) & 0x80;
+            discontinuity_indicator = *p_ts_package & 0x80;
         }
-        if (header_dw & 0x10 && (header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator) {
+        if (ts_header_dw & 0x10 && (ts_header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator)
+        {
             if (cc == -1 || discontinuity_indicator)
             {
-                ecc = header_dw & 0xf;
+                ecc = ts_header_dw & 0xf;
             }
-            cc = header_dw & 0xf;
+            cc = ts_header_dw & 0xf;
             if (ecc != cc)
             {
                 if (!cc_error_occurs)
@@ -182,7 +190,6 @@ int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
                 {
                     has_cc_error = 1;
                     ecc = cc+1;
-                    //std::cout << "Error!!!" << "\n";
                     if (ecc > 15)
                     {
                         ecc = 0;
@@ -197,6 +204,10 @@ int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
                     ecc = 0;
                 }
             }
+            lost_pcr_pid_continuously_counter = 0;
+        } else
+        {
+            lost_pcr_pid_continuously_counter++;
         }
     }
     return has_cc_error;
