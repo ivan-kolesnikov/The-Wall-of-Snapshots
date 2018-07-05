@@ -11,6 +11,9 @@
 #define READ_N_BYTES_PER_ITERATION MAX_RTP_HEADER_SIZE + \
         AMOUNT_TS_PACKETS_IN_RTP_PACKET * DEFAULT_TS_PACKET_SIZE
 
+void argv_parser(int *argc, char *argv[]);
+void join_mcast(int *sock, socklen_t *socklen, struct sockaddr_in *saddr, char *argv[]);
+void leave_mcast(int *sock);
 // get PMT or PCR pid from TS package if it exist
 uint16_t get_pid_from_table(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid);
 // find cc error in TS package if it exist
@@ -25,67 +28,15 @@ int addressIndex, portIndex, idIndex, nameIndex;
 
 int main(int argc, char *argv[])
 {
-    //argv parsing
-    for (int i = 1; i < argc-1; i++)
-    {
-        if (std::string(argv[i]) == "-a")
-        {
-            addressIndex = ++i;
-        }
-        else if (std::string(argv[i]) == "-p")
-        {
-            portIndex = ++i;
-        }
-        else if (std::string(argv[i]) == "-i")
-        {
-            idIndex = ++i;
-        }
-        else if (std::string(argv[i]) == "-n")
-        {
-            nameIndex = ++i;
-        }
-        else
-        {
-            help();
-            return -1;
-        }
-    }
+    // parse argv and set argv indexes
+    argv_parser(&argc, argv);
 
-    int sock, status;
+
+    int sock;
     socklen_t socklen;
     struct sockaddr_in saddr;
-    struct ip_mreq imreq;
-    // set content of struct saddr and imreq to zero
-    memset(&saddr, 0, sizeof(struct sockaddr_in));
-    memset(&imreq, 0, sizeof(struct ip_mreq));
-    // open a UDP socket
-    sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP); //was IPPROTO_IP
-    if ( sock < 0 )
-      perror("Error creating socket"), exit(0);
-    int enable = 1;
-    status = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
-    saddr.sin_family = PF_INET;
-    // listen port
-    saddr.sin_port = htons(atoi(argv[portIndex]));
-    saddr.sin_addr.s_addr = inet_addr(argv[addressIndex]);
-    status = bind(sock, (struct sockaddr *)&saddr, sizeof(struct sockaddr_in));
-    if ( status < 0 )
-      perror("Error binding socket to interface"), exit(0);
-    imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
-    imreq.imr_interface.s_addr = INADDR_ANY; // use DEFAULT interface
-    // JOIN multicast group on default interface
-    status = setsockopt(sock, IPPROTO_IP, IP_ADD_MEMBERSHIP,
-               (const void *)&imreq, sizeof(struct ip_mreq));
-    // set time to live for the socket
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 100000; // 0.1 sec
-    status = setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
-    socklen = sizeof(struct sockaddr_in);
-    // log
-    std::cout << current_datetime() << " Capturing from: " << argv[addressIndex] << ":" << argv[portIndex]
-              << " is started" << std::endl;
-
+    join_mcast(&sock, &socklen, &saddr, argv);
+    std::cout << current_datetime() << " Capturing_from: " << argv[addressIndex] << ":" << argv[portIndex] << std::endl;
 
     int read_bytes = 0;
     int read_bytes_sum = 0;
@@ -189,10 +140,7 @@ int main(int argc, char *argv[])
             last_report_time_ms = epoch_ms();
         }
     }
-    // shutdown socket
-    shutdown(sock, 2);
-    // close socket
-    close(sock);
+    leave_mcast(&sock);
     return 0;
 }
 
@@ -298,6 +246,84 @@ int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
         }
     }
     return has_cc_error;
+}
+
+
+void argv_parser(int *argc, char *argv[])
+{
+    for (int i = 1; i < *argc-1; i++)
+    {
+        if (std::string(argv[i]) == "-a")
+        {
+            addressIndex = ++i;
+        }
+        else if (std::string(argv[i]) == "-p")
+        {
+            portIndex = ++i;
+        }
+        else if (std::string(argv[i]) == "-i")
+        {
+            idIndex = ++i;
+        }
+        else if (std::string(argv[i]) == "-n")
+        {
+            nameIndex = ++i;
+        }
+        else
+        {
+            help();
+            exit(1);
+        }
+    }
+}
+
+
+void join_mcast(int *sock, socklen_t *socklen, struct sockaddr_in *saddr, char *argv[])
+{
+    int status;
+    struct ip_mreq imreq;
+    // set content of struct saddr and imreq to zero
+    memset(saddr, 0, sizeof(struct sockaddr_in));
+    memset(&imreq, 0, sizeof(struct ip_mreq));
+    // open the UDP socket
+    *sock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (*sock < 0)
+    {
+        std::cerr << "Error creating socket" << std::endl;
+        exit(1);
+    }
+    int enable = 1;
+    status = setsockopt(*sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
+    saddr->sin_family = PF_INET;
+    // listen port
+    saddr->sin_port = htons(atoi(argv[portIndex]));
+    saddr->sin_addr.s_addr = inet_addr(argv[addressIndex]);
+    status = bind(*sock, (struct sockaddr *)saddr, sizeof(struct sockaddr_in));
+    if (status < 0)
+    {
+        std::cerr << "Error binding socket to interface" << std::endl;
+        exit(1);
+    }
+    imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
+    // use DEFAULT interface
+    imreq.imr_interface.s_addr = INADDR_ANY;
+    // JOIN multicast group on the default interface
+    status = setsockopt(*sock, IPPROTO_IP, IP_ADD_MEMBERSHIP, (const void *)&imreq, sizeof(struct ip_mreq));
+    // set time to live for the socket
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 100000; // 0.1 sec
+    status = setsockopt (*sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout, sizeof (timeout));
+    *socklen = sizeof(struct sockaddr_in);
+}
+
+
+void leave_mcast(int *sock)
+{
+    // shutdown socket
+    shutdown(*sock, 2);
+    // close socket
+    close(*sock);
 }
 
 
