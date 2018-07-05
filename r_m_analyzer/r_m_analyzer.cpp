@@ -1,37 +1,9 @@
-#include <iostream>
-#include <arpa/inet.h>
-#include <string.h>
-#include <sys/time.h>
-#include <unistd.h>
-
-#define DEFAULT_TS_PACKET_SIZE 188
-#define AMOUNT_TS_PACKETS_IN_RTP_PACKET 7
-#define MIN_RTP_HEADER_SIZE 12
-#define MAX_RTP_HEADER_SIZE 76 // 12+4*16
-#define READ_N_BYTES_PER_ITERATION MAX_RTP_HEADER_SIZE + \
-        AMOUNT_TS_PACKETS_IN_RTP_PACKET * DEFAULT_TS_PACKET_SIZE
-
-void argv_parser(int *argc, char *argv[]);
-void join_mcast(int *sock, socklen_t *socklen, struct sockaddr_in *saddr, char *argv[]);
-void leave_mcast(int *sock);
-// get PMT or PCR pid from TS package if it exist
-uint16_t get_pid_from_table(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid);
-// find cc error in TS package if it exist
-int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid);
-// get current datetime, format is YYYY-MM-DD HH:mm:ss
-const std::string current_datetime();
-// get current epoch time in ms
-long int epoch_ms();
-void help();
-int addressIndex, portIndex, idIndex, nameIndex;
-
+#include "r_m_analyzer.h"
 
 int main(int argc, char *argv[])
 {
     // parse argv and set argv indexes
     argv_parser(&argc, argv);
-
-
     int sock;
     socklen_t socklen;
     struct sockaddr_in saddr;
@@ -42,9 +14,6 @@ int main(int argc, char *argv[])
     int read_bytes_sum = 0;
     int rtp_header_size = 0;
     uint8_t rtp_packages_buff[READ_N_BYTES_PER_ITERATION];
-    // continuety counter for rtp packages
-    uint16_t eseq = 0;
-    uint16_t seq = 0;
     int udp_error_raise_counter = 0;
     uint udp_lost_packages_counter = 0;
     uint16_t pcr_pid = 0;
@@ -63,28 +32,13 @@ int main(int argc, char *argv[])
             // sum of bytes for the bitrate calculation
             read_bytes_sum += read_bytes;
             rtp_header_size = 12 + 4 * (rtp_packages_buff[0] & 16);
-
-            // found rtp counter and check the order
-            seq = (rtp_packages_buff[2] << 8)+rtp_packages_buff[3];
-            if (!eseq && seq)
+            // check RTP header cc
+            int lost_udp_packages = check_rtp_cc(rtp_packages_buff);
+            // if any RTP packages were lost
+            if (lost_udp_packages)
             {
-                eseq = seq;
-            } else
-            {
-                eseq++;
-            }
-
-            if (seq != eseq)
-            {
-                int delta_seq_eseq = (seq-eseq);
-                if (delta_seq_eseq < 0)
-                {
-                    delta_seq_eseq = delta_seq_eseq + 65535;
-                }
-                udp_lost_packages_counter += delta_seq_eseq;
+                udp_lost_packages_counter += lost_udp_packages;
                 udp_error_raise_counter++;
-                //std::cerr << current_datetime() << " SEQ = " << seq << " ESEC = " << eseq << "\n";
-                eseq = seq;
             }
             // for each ts package
             for (int ts_package_index = 0; ts_package_index < AMOUNT_TS_PACKETS_IN_RTP_PACKET; ts_package_index++)
@@ -246,6 +200,33 @@ int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
         }
     }
     return has_cc_error;
+}
+
+
+int check_rtp_cc(uint8_t *p_rtp_package)
+{
+    static uint16_t eseq = 0;
+    uint16_t seq = 0;
+    // found rtp counter and check the order
+    seq = (*(p_rtp_package+2) << 8) + *(p_rtp_package+3);
+    if (!eseq && seq)
+    {
+        eseq = seq;
+    } else
+    {
+        eseq++;
+    }
+    if (seq != eseq)
+    {
+        int delta_seq_eseq = (seq-eseq);
+        if (delta_seq_eseq < 0)
+        {
+            delta_seq_eseq = delta_seq_eseq + 65535;
+        }
+        eseq = seq;
+        return delta_seq_eseq;
+    }
+    return 0;
 }
 
 
