@@ -64,6 +64,9 @@ int main(int argc, char *argv[])
                             ts_package_index*DEFAULT_TS_PACKAGE_SIZE], &pcr_pid);
                 }
             }
+        } else if (read_bytes == -1)
+        {
+            leave_mcast(&sock);
         }
         // find difference between now and the last_report_time_ms
         last_report_time_difference_ms = epoch_ms() - last_report_time_ms;
@@ -84,8 +87,6 @@ int main(int argc, char *argv[])
             {
                 std::cout << " CC_errors: " << std::to_string(cc_error_raise_counter);
             }
-            std::cout << " PCR_pid: " << std::to_string(pcr_pid);
-            std::cout << " lost_pcr_pid_continuously_counter: " << std::to_string(lost_pcr_pid_continuously_counter); //!!!test
             std::cout << std::endl;
             // reset variables
             read_bytes_sum = 0;
@@ -245,19 +246,19 @@ void argv_parser(int *argc, char *argv[])
 {
     for (int i = 1; i < *argc-1; i++)
     {
-        if (std::string(argv[i]) == "-a")
+        if (std::string(argv[i]) == "-a" || std::string(argv[i]) == "--address-mcast")
         {
             addressIndex = ++i;
         }
-        else if (std::string(argv[i]) == "-p")
+        else if (std::string(argv[i]) == "-p" || std::string(argv[i]) == "--port-mcast")
         {
             portIndex = ++i;
         }
-        else if (std::string(argv[i]) == "-i")
+        else if (std::string(argv[i]) == "-i" || std::string(argv[i]) == "--channel-id")
         {
             idIndex = ++i;
         }
-        else if (std::string(argv[i]) == "-n")
+        else if (std::string(argv[i]) == "-n" || std::string(argv[i]) == "--channel-name")
         {
             nameIndex = ++i;
         }
@@ -267,6 +268,17 @@ void argv_parser(int *argc, char *argv[])
             exit(1);
         }
     }
+}
+
+
+void help() {
+    std::cout << "r_m_analyzer" << "[options]" << std::endl
+              << "Options:" << std::endl
+              << "-a | --address-mcast       multicast address" << std::endl
+              << "-p | --port-mcast          multicast port" << std::endl
+              << "-i | --channel-id          channel id" << std::endl
+              << "-n | --channel-name        channel name" << std::endl
+              << "-h | --help                print this help" << std::endl;
 }
 
 
@@ -316,11 +328,6 @@ void leave_mcast(int *sock)
     shutdown(*sock, 2);
     // close socket
     close(*sock);
-}
-
-
-void help() {
-    std::cout << "HELP! SOON" << "\n";
 }
 
 
