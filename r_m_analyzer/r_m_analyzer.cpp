@@ -110,7 +110,8 @@ int main(int argc, char *argv[])
 }
 
 
-uint16_t get_pid_from_table(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid) {
+uint16_t get_pid_from_table(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid)
+{
     uint32_t ts_header_dw = 0x47;
     uint16_t program_number = 0;
     uint16_t result_pid = 0;
@@ -158,7 +159,8 @@ uint16_t get_pid_from_table(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t tab
 }
 
 
-int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid) {
+int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid)
+{
     uint32_t ts_header_dw = 0x47;
     static int8_t cc = -1;
     static int8_t ecc = -1;
@@ -274,7 +276,8 @@ void argv_parser(int *argc, char *argv[])
 }
 
 
-void help() {
+void help()
+{
     std::cout << "r_m_analyzer" << "[options]" << std::endl
               << "Options:" << std::endl
               << "-a | --address-mcast       multicast address" << std::endl
@@ -334,7 +337,8 @@ void leave_mcast(int *sock)
 }
 
 
-const std::string current_datetime() {
+const std::string current_datetime()
+{
     time_t     now = time(0);
     struct tm  tstruct;
     char       buf[80];
