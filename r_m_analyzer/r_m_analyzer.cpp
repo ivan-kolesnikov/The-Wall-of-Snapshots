@@ -64,9 +64,12 @@ int main(int argc, char *argv[])
                             ts_package_index*DEFAULT_TS_PACKAGE_SIZE], &pcr_pid);
                 }
             }
+        // reconnect in case of error
         } else if (read_bytes == -1)
         {
+            sleep(1);
             leave_mcast(&sock);
+            join_mcast(&sock, &socklen, &saddr, argv);
         }
         // find difference between now and the last_report_time_ms
         last_report_time_difference_ms = epoch_ms() - last_report_time_ms;
