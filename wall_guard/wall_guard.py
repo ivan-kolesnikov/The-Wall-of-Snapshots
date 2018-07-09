@@ -71,11 +71,11 @@ def start():
     if pid is not None:
         # get the real guard status only by pid
         real_guard_state = get_process_state(pid, str(pid))
-        # if the guard stopped or need to start the worker in any case
+        # if the guard stopped or need to start the guard in any case
         if real_guard_state == "stopped" or args.force_start:
             # remove the old pid file
             os.remove(pid_file)
-        # if the worker process exist
+        # if the guard process exist
         else:
             print("\033[91m"+"The Wall Guard is already running"+"\033[0m")
             log_guard(get_current_time()+" Trying to start the Wall Guard, but it's already running, pid="+str(pid))
@@ -102,15 +102,15 @@ def stop():
         # empty return - no error in case of restart
         return
 
-    # kill the worker
+    # kill the guard
     try:
         # no more than 10 tries to stop the guard
         for _ in range(0, 10):
             os.kill(pid, signal.SIGTERM)
             time.sleep(0.1)
-        # can not kill the worker correctly, sleep 5 seconds
+        # can not kill the guard correctly, sleep 5 seconds
         time.sleep(5)
-        # check the worker status
+        # check the guard status
         real_guard_state = get_process_state(pid, str(pid))
         # if the guard still running
         if real_guard_state != 'stopped':
@@ -132,7 +132,7 @@ def restart():
 
 
 def status():
-    # Open the pid_file to get the worker pid
+    # Open the pid_file to get the guard pid
     try:
         with open(pid_file, 'r') as pf:
             pid = int(pf.read().strip())
@@ -176,13 +176,13 @@ def get_process_state(pid, command):
 
 
 def main():
-    if args.worker_state == 'start':
+    if args.guard_state == 'start':
         start()
-    elif args.worker_state == 'stop':
+    elif args.guard_state == 'stop':
         stop()
-    elif args.worker_state == 'restart':
+    elif args.guard_state == 'restart':
         restart()
-    elif args.worker_state == 'status':
+    elif args.guard_state == 'status':
         status()
     else:
         parser.print_help()
