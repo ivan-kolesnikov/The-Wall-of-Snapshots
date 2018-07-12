@@ -8,6 +8,18 @@
 #include <unistd.h>
 #include "r_m_analyzer.h"
 
+
+
+//#include <sys/types.h>
+//#include <sys/socket.h>
+//#include <netinet/in.h>
+#include <netdb.h>
+//#include <memory.h>
+//#include <ifaddrs.h>
+//#include <net/if.h>
+//#include <errno.h>
+//#include <stdlib.h>
+
 #define DEFAULT_TS_PACKAGE_SIZE 188
 #define AMOUNT_TS_PACKAGES_IN_RTP_PACKAGE 7
 #define MIN_RTP_HEADER_SIZE 12
@@ -19,6 +31,8 @@
 void argv_parser(int *argc, char *argv[]);
 void join_mcast(int *sock, socklen_t *socklen, struct sockaddr_in *saddr, char *argv[]);
 void leave_mcast(int *sock);
+int create_udp_socket(const char *hostname, int family, const char *service, sockaddr_storage *p_addr);
+void destroy_udp_socket(int *udp_sock_fd);
 // get PMT or PCR pid from TS package if it exist
 uint16_t get_pid_from_table(uint8_t *p_ts_package, bool is_pmt_pid, uint16_t table_pid);
 // find cc error in RTP package is it exist
@@ -31,7 +45,7 @@ const std::string current_datetime();
 long int epoch_ms();
 void help();
 
-int addressIndex, portIndex, idIndex, nameIndex;
+int addressIndex = -1, portIndex = -1, idIndex = -1, nameIndex = -1, out_address_index = -1, out_port_index = -1;
 int lost_pcr_pid_continuously_counter = 0;
 
 

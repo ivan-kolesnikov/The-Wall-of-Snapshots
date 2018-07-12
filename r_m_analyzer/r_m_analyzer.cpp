@@ -9,7 +9,31 @@ int main(int argc, char *argv[])
     struct sockaddr_in saddr;
     join_mcast(&sock, &socklen, &saddr, argv);
     std::cout << current_datetime() << " Capturing_from: " << argv[addressIndex] << ":" << argv[portIndex] << std::endl;
+    // create udp socket to send info
+    sockaddr_storage addrDest = {};
+    int udp_sock = create_udp_socket(argv[out_address_index], AF_INET, argv[out_port_index], &addrDest);
 
+
+    std::string msg = "Jane Doe1\r\n";
+        int sent_bytes = 0;
+        sent_bytes = sendto(udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+   exit(0);
+//    int udp_sock = create_udp_socket("192.168.3.23", AF_INET, "2115", &addrDest);
+//    std::string msg = "Jane Doe1\r\n";
+//    int sent_bytes = 0;
+//    sent_bytes = sendto(bind_udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+//    //close(bind_udp_sock);
+//    sent_bytes = sendto(bind_udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+//    if (sent_bytes == -1)
+//    {
+//        destroy_udp_socket(&bind_udp_sock);
+//        bind_udp_sock = create_udp_socket("192.168.3.23", AF_INET, "2115", &addrDest);
+//    }
+
+//    bind_udp_sock = create_udp_socket("192.168.3.23", AF_INET, "2115", &addrDest);
+//    sent_bytes = sendto(bind_udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+//    std::cout << sent_bytes << " bytes sent" << std::endl;
+//    exit(0);
     int read_bytes = 0;
     int read_bytes_sum = 0;
     int rtp_header_size = 0;
@@ -76,6 +100,14 @@ int main(int argc, char *argv[])
         // need to send the report
         if (last_report_time_difference_ms > 1000)
         {
+            std::string log_stdout = "";
+            std::string log_udp = "";
+
+            log_udp += std::string(argv[idIndex]);
+
+
+
+
             bitrate_kbs = read_bytes_sum*8/last_report_time_difference_ms*1000/1024;
             std::cout << current_datetime() << " Bitrate: " << std::to_string(bitrate_kbs) << " Kbit/s";
             if (udp_error_raise_counter)
@@ -267,6 +299,14 @@ void argv_parser(int *argc, char *argv[])
         {
             nameIndex = ++i;
         }
+        else if (std::string(argv[i]) == "-A" || std::string(argv[i]) == "--address-output")
+        {
+            out_address_index = ++i;
+        }
+        else if (std::string(argv[i]) == "-P" || std::string(argv[i]) == "--port-output")
+        {
+            out_port_index = ++i;
+        }
         else
         {
             help();
@@ -284,7 +324,43 @@ void help()
               << "-p | --port-mcast          multicast port" << std::endl
               << "-i | --channel-id          channel id" << std::endl
               << "-n | --channel-name        channel name" << std::endl
+              << "-A | --address-output      output udp address" << std::endl
+              << "-P | --port-output         output udp port" << std::endl
               << "-h | --help                print this help" << std::endl;
+}
+
+
+int create_udp_socket(const char *hostname, int family, const char *service, sockaddr_storage *p_addr)
+{
+    int bind_udp = socket(AF_INET, SOCK_DGRAM, 0);
+    sockaddr_in addrListen = {}; // zero-int, sin_port is 0, which picks a random port for bind.
+    addrListen.sin_family = AF_INET;
+    if (bind(bind_udp, (sockaddr*)&addrListen, sizeof(addrListen)) == -1)
+    {
+        std::cerr << "Can't to create the bind udp socket" << std::endl;
+        exit(1);
+    }
+    addrinfo* result_list = NULL;
+    addrinfo hints = {};
+    hints.ai_family = family;
+    hints.ai_socktype = SOCK_DGRAM; // without this flag, getaddrinfo will return 3x the number of addresses (one for each socket type).
+    if (getaddrinfo(hostname, service, &hints, &result_list) == 0)
+    {
+        memcpy(p_addr, result_list->ai_addr, result_list->ai_addrlen);
+        freeaddrinfo(result_list);
+    }
+    else
+    {
+        std::cerr << "Can't to create the binding udp socket" << std::endl;
+        exit(1);
+    }
+    return bind_udp;
+}
+
+
+void destroy_udp_socket(int *udp_sock_fd)
+{
+    close(*udp_sock_fd);
 }
 
 
