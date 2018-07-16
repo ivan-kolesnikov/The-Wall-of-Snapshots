@@ -45,7 +45,7 @@ const std::string current_datetime();
 long int epoch_ms();
 void help();
 
-int addressIndex = -1, portIndex = -1, idIndex = -1, nameIndex = -1, out_address_index = -1, out_port_index = -1;
+int address_index = -1, port_index = -1, id_index = -1, name_index = -1, out_address_index = -1, out_port_index = -1;
 int lost_pcr_pid_continuously_counter = 0;
 
 

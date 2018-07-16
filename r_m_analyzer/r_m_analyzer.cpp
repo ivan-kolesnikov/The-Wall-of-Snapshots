@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
     socklen_t socklen;
     struct sockaddr_in saddr;
     join_mcast(&sock, &socklen, &saddr, argv);
-    std::cout << current_datetime() << " Capturing_from: " << argv[addressIndex] << ":" << argv[portIndex] << std::endl;
+    std::cout << current_datetime() << " Capturing_from: " << argv[address_index] << ":" << argv[port_index] << std::endl;
     // create udp socket to send info
     sockaddr_storage addrDest = {};
     int udp_sock = create_udp_socket(argv[out_address_index], AF_INET, argv[out_port_index], &addrDest);
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
             std::string log_stdout = "";
             std::string log_udp = "";
 
-            log_udp += std::string(argv[idIndex]);
+            log_udp += std::string(argv[id_index]);
 
 
 
@@ -285,19 +285,19 @@ void argv_parser(int *argc, char *argv[])
     {
         if (std::string(argv[i]) == "-a" || std::string(argv[i]) == "--address-mcast")
         {
-            addressIndex = ++i;
+            address_index = ++i;
         }
         else if (std::string(argv[i]) == "-p" || std::string(argv[i]) == "--port-mcast")
         {
-            portIndex = ++i;
+            port_index = ++i;
         }
         else if (std::string(argv[i]) == "-i" || std::string(argv[i]) == "--channel-id")
         {
-            idIndex = ++i;
+            id_index = ++i;
         }
         else if (std::string(argv[i]) == "-n" || std::string(argv[i]) == "--channel-name")
         {
-            nameIndex = ++i;
+            name_index = ++i;
         }
         else if (std::string(argv[i]) == "-A" || std::string(argv[i]) == "--address-output")
         {
@@ -382,15 +382,15 @@ void join_mcast(int *sock, socklen_t *socklen, struct sockaddr_in *saddr, char *
     status = setsockopt(*sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int));
     saddr->sin_family = PF_INET;
     // listen port
-    saddr->sin_port = htons(atoi(argv[portIndex]));
-    saddr->sin_addr.s_addr = inet_addr(argv[addressIndex]);
+    saddr->sin_port = htons(atoi(argv[port_index]));
+    saddr->sin_addr.s_addr = inet_addr(argv[address_index]);
     status = bind(*sock, (struct sockaddr *)saddr, sizeof(struct sockaddr_in));
     if (status < 0)
     {
         std::cerr << "Error binding socket to interface" << std::endl;
         exit(1);
     }
-    imreq.imr_multiaddr.s_addr = inet_addr(argv[addressIndex]);
+    imreq.imr_multiaddr.s_addr = inet_addr(argv[address_index]);
     // use DEFAULT interface
     imreq.imr_interface.s_addr = INADDR_ANY;
     // JOIN multicast group on the default interface
