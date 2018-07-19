@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
             std::string log_stdout = "";
             std::string log_udp = "";
 
-            log_udp += std::string(argv[id_index]);
+            log_udp += "ch_id:"+std::string(argv[id_index])+"_timestamp:"+current_datetime();
 
 
 
