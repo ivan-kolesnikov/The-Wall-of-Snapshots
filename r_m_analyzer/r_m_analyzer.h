@@ -7,18 +7,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 #include "r_m_analyzer.h"
-
-
-
-//#include <sys/types.h>
-//#include <sys/socket.h>
-//#include <netinet/in.h>
 #include <netdb.h>
-//#include <memory.h>
-//#include <ifaddrs.h>
-//#include <net/if.h>
-//#include <errno.h>
-//#include <stdlib.h>
 
 #define DEFAULT_TS_PACKAGE_SIZE 188
 #define AMOUNT_TS_PACKAGES_IN_RTP_PACKAGE 7
@@ -27,6 +16,9 @@
 #define READ_N_BYTES_PER_ITERATION MAX_RTP_HEADER_SIZE + \
         AMOUNT_TS_PACKAGES_IN_RTP_PACKAGE * DEFAULT_TS_PACKAGE_SIZE
 #define MAX_LOST_PCR_PID_CONTINUOUSLY_VALUE 2000
+
+int address_index = -1, port_index = -1, id_index = -1, name_index = -1, out_address_index = -1, out_port_index = -1;
+int lost_pcr_pid_continuously_counter = 0;
 
 void argv_parser(int *argc, char *argv[]);
 void join_mcast(int *sock, socklen_t *socklen, struct sockaddr_in *saddr, char *argv[]);
@@ -44,9 +36,5 @@ const std::string current_datetime();
 // get current epoch time in ms
 long int epoch_ms();
 void help();
-
-int address_index = -1, port_index = -1, id_index = -1, name_index = -1, out_address_index = -1, out_port_index = -1;
-int lost_pcr_pid_continuously_counter = 0;
-
 
 #endif // R_M_ANALYZER_H

@@ -7,33 +7,6 @@ int main(int argc, char *argv[])
     int sock;
     socklen_t socklen;
     struct sockaddr_in saddr;
-    join_mcast(&sock, &socklen, &saddr, argv);
-    std::cout << current_datetime() << " Capturing_from: " << argv[address_index] << ":" << argv[port_index] << std::endl;
-    // create udp socket to send info
-    sockaddr_storage addrDest = {};
-    int udp_sock = create_udp_socket(argv[out_address_index], AF_INET, argv[out_port_index], &addrDest);
-
-
-    std::string msg = "Jane Doe1\r\n";
-        int sent_bytes = 0;
-        sent_bytes = sendto(udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-   exit(0);
-//    int udp_sock = create_udp_socket("192.168.3.23", AF_INET, "2115", &addrDest);
-//    std::string msg = "Jane Doe1\r\n";
-//    int sent_bytes = 0;
-//    sent_bytes = sendto(bind_udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-//    //close(bind_udp_sock);
-//    sent_bytes = sendto(bind_udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-//    if (sent_bytes == -1)
-//    {
-//        destroy_udp_socket(&bind_udp_sock);
-//        bind_udp_sock = create_udp_socket("192.168.3.23", AF_INET, "2115", &addrDest);
-//    }
-
-//    bind_udp_sock = create_udp_socket("192.168.3.23", AF_INET, "2115", &addrDest);
-//    sent_bytes = sendto(bind_udp_sock, msg.c_str(), msg.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
-//    std::cout << sent_bytes << " bytes sent" << std::endl;
-//    exit(0);
     int read_bytes = 0;
     int read_bytes_sum = 0;
     int rtp_header_size = 0;
@@ -46,7 +19,16 @@ int main(int argc, char *argv[])
     long int last_report_time_ms = epoch_ms();
     long int last_report_time_difference_ms = 0;
     int bitrate_kbs = 0;
-
+    std::string log_stdout = "";
+    std::string log_udp = "";
+    std::string iter_datetime;
+    int sent_bytes = 0;
+    // create mcast socket to read data
+    join_mcast(&sock, &socklen, &saddr, argv);
+    std::cout << current_datetime() << " Capturing_from: " << argv[address_index] << ":" << argv[port_index] << std::endl;
+    // create udp socket to send info
+    sockaddr_storage addrDest = {};
+    int udp_sock = create_udp_socket(argv[out_address_index], AF_INET, argv[out_port_index], &addrDest);
     while (true)
     {
         // read data from the socket
@@ -100,29 +82,38 @@ int main(int argc, char *argv[])
         // need to send the report
         if (last_report_time_difference_ms > 1000)
         {
-            std::string log_stdout = "";
-            std::string log_udp = "";
-
-            log_udp += "ch_id:"+std::string(argv[id_index])+"_timestamp:"+current_datetime();
-
-
-
-
             bitrate_kbs = read_bytes_sum*8/last_report_time_difference_ms*1000/1024;
-            std::cout << current_datetime() << " Bitrate: " << std::to_string(bitrate_kbs) << " Kbit/s";
+            iter_datetime = current_datetime();
+
+            log_udp = "ch_id|"+std::string(argv[id_index])+"#timestamp|"+iter_datetime+"#bitrate|"+std::to_string(bitrate_kbs);
+            log_stdout = iter_datetime+" Bitrate: "+std::to_string(bitrate_kbs)+" Kbit/s";
             if (udp_error_raise_counter)
             {
-                std::cout << " UDP_errors: " << std::to_string(udp_error_raise_counter);
+                log_udp += "#udp_errors|"+std::to_string(udp_error_raise_counter);
+                log_stdout +=" udp_errors: "+std::to_string(udp_error_raise_counter);
             }
             if (udp_lost_packages_counter)
             {
-                std::cout << " UDP_lost_packages: " << std::to_string(udp_lost_packages_counter);
+                log_udp +="#udp_lost_packages|"+std::to_string(udp_lost_packages_counter);
+                log_stdout +=" udp_lost_packages: "+std::to_string(udp_lost_packages_counter);
             }
             if (cc_error_raise_counter)
             {
-                std::cout << " CC_errors: " << std::to_string(cc_error_raise_counter);
+                log_udp +="#cc_errors|"+std::to_string(cc_error_raise_counter);
+                log_stdout +=" cc_errors: "+std::to_string(cc_error_raise_counter);
             }
-            std::cout << std::endl;
+            // send udp log
+            sent_bytes = sendto(udp_sock, log_udp.c_str(), log_udp.size(), 0, (sockaddr*)&addrDest, sizeof(addrDest));
+            // write log in stdout
+            std::cout << log_stdout << std::endl;
+            // in case of socket error or sent nothing
+            if (sent_bytes <= 0)
+            {
+                sleep(1);
+                // udp socket reconnect
+                destroy_udp_socket(&udp_sock);
+                udp_sock = create_udp_socket(argv[out_address_index], AF_INET, argv[out_port_index], &addrDest);
+            }
             // reset variables
             read_bytes_sum = 0;
             udp_error_raise_counter = 0;
