@@ -84,8 +84,8 @@ int main(int argc, char *argv[])
         {
             bitrate_kbs = read_bytes_sum*8/last_report_time_difference_ms*1000/1024;
             iter_datetime = current_datetime();
-
-            log_udp = "ch_id|"+std::string(argv[id_index])+"#timestamp|"+iter_datetime+"#bitrate|"+std::to_string(bitrate_kbs);
+            log_udp = "ch_id|"+std::string(argv[id_index])+"#timestamp|"+
+                    iter_datetime+"#bitrate|"+std::to_string(bitrate_kbs);
             log_stdout = iter_datetime+" Bitrate: "+std::to_string(bitrate_kbs)+" Kbit/s";
             if (udp_error_raise_counter)
             {
@@ -324,7 +324,7 @@ void help()
 int create_udp_socket(const char *hostname, int family, const char *service, sockaddr_storage *p_addr)
 {
     int bind_udp = socket(AF_INET, SOCK_DGRAM, 0);
-    sockaddr_in addrListen = {}; // zero-int, sin_port is 0, which picks a random port for bind.
+    sockaddr_in addrListen = {};
     addrListen.sin_family = AF_INET;
     if (bind(bind_udp, (sockaddr*)&addrListen, sizeof(addrListen)) == -1)
     {
@@ -334,7 +334,7 @@ int create_udp_socket(const char *hostname, int family, const char *service, soc
     addrinfo* result_list = NULL;
     addrinfo hints = {};
     hints.ai_family = family;
-    hints.ai_socktype = SOCK_DGRAM; // without this flag, getaddrinfo will return 3x the number of addresses (one for each socket type).
+    hints.ai_socktype = SOCK_DGRAM;
     if (getaddrinfo(hostname, service, &hints, &result_list) == 0)
     {
         memcpy(p_addr, result_list->ai_addr, result_list->ai_addrlen);
