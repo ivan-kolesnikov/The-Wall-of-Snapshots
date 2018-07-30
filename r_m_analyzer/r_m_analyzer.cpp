@@ -200,7 +200,7 @@ int check_ts_cc(uint8_t *p_ts_package, uint16_t *pid)
         uint8_t discontinuity_indicator = 0;
         // if discontinuity indicator exists
         if (ts_header_dw & 0x20 && *p_ts_package++) {
-            // 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload,
+            // 0x20 10 – adaptation field only, no payload,11 – adaptation field followed by payload
             discontinuity_indicator = *p_ts_package & 0x80;
         }
         if (ts_header_dw & 0x10 && (ts_header_dw & 0x1fff00)>>8 == *pid && !discontinuity_indicator)
