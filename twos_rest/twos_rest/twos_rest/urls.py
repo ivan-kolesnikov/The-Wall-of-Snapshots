@@ -20,7 +20,13 @@ from django.conf.urls import url
 
 urlpatterns = [
     url('admin/', admin.site.urls),
-    url('channel/$', views.ChannelsList.as_view()),
-    url('channel/(?P<pk>[0-9]+)/$', views.ChannelDetail.as_view()),
-    url('stat/', views.StatisticList.as_view()),
+    url('channels/$', views.ChannelsList.as_view()),
+    url('events/', views.EventsList.as_view()),
+    url('channels/(?P<pk>[0-9]+)/$', views.ChannelDetail.as_view()),
+    url('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),
 ]
+##url('channels/event', views.ChannelEventList.as_view()),
+    ##url('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view())
+
+# url('channels/(?P<pk>[0-9]+)/$/events', views.ChannelEventDetail.as_view()),
+#    url('stat/', views.StatisticList.as_view()),

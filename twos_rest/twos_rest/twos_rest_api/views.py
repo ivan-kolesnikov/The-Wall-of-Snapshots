@@ -7,8 +7,8 @@ from rest_framework import viewsets
 #from twos_rest.twos_rest.twos_rest_api.models import
 
 from rest_framework.views import APIView
-from .models import Channel
-from .serializers import ChannelSerializer, StatisticSerializer
+from .models import Channel, Event
+from .serializers import ChannelSerializer, EventSerializer, ChannelEventSerializer
 from rest_framework.response import Response
 
 from django.http import Http404
@@ -18,6 +18,16 @@ class ChannelsList(APIView):
     def get(self, request):
         channels = Channel.objects.all()
         serializer = ChannelSerializer(channels, many=True)
+        return Response(serializer.data)
+
+    def post(self):
+        pass
+    
+    
+class EventsList(APIView):
+    def get(self, request):
+        events = Event.objects.all()
+        serializer = EventSerializer(events, many=True)
         return Response(serializer.data)
 
     def post(self):
@@ -46,19 +56,49 @@ class ChannelDetail(APIView):
         pass
 
 
+class ChannelEventList(APIView):
+    def get(self, request):
+        channels = Channel.objects.all()
+        serializer = ChannelEventSerializer(channels, many=True)
+        return Response(serializer.data)
+
+    def post(self):
+        pass
+
+
+class ChannelEventDetail(APIView):
+    def get_object(self, pk):
+        try:
+            return Channel.objects.get(pk=pk)
+        except Channel.DoesNotExist:
+            raise Http404
+
+    def get(self, request, pk, format=None):
+        channel = self.get_object(pk)
+        channel = ChannelEventSerializer(channel)
+        return Response(channel.data)
+
+    def put(self, request, pk, format=None):
+        pass
+
+    def delete(self, request, pk, format=None):
+        pass
+
+'''
 class StatisticList(APIView):
     def get(self, request):
         get_data = request.query_params
         print(get_data)
         #channels = Channel.objects.all()
-        channels = Channel.objects.filter(name=get_data['name'])
+        #channels = Channel.objects.filter(name=get_data['name'])
+        channels = Channel.objects.all()
 
         serializer = StatisticSerializer(channels, many=True)
         return Response(serializer.data)
 
     def post(self):
         pass
-
+'''
 
 
 
