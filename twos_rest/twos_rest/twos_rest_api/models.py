@@ -30,7 +30,7 @@ class Snap(models.Model):
 
 class Event(models.Model):
     id = models.AutoField(primary_key=True)
-    channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True, related_name='event')
+    channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True, related_name='events')
     event_time = models.DateTimeField(null=True)
 
     def __str__(self):

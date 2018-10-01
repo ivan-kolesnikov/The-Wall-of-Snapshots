@@ -16,17 +16,14 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from twos_rest_api import views
-from django.conf.urls import url
+from django.urls import path, re_path
+#from django.conf.urls import url
 
 urlpatterns = [
-    url('admin/', admin.site.urls),
-    url('channels/$', views.ChannelsList.as_view()),
-    url('events/', views.EventsList.as_view()),
-    url('channels/(?P<pk>[0-9]+)/$', views.ChannelDetail.as_view()),
-    url('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),
+    path('admin/', admin.site.urls),
+    path('channels/', views.ChannelsList.as_view()),
+    path('events/', views.EventsList.as_view()),
+    re_path('channels/(?P<pk>[0-9]+)/$', views.ChannelDetail.as_view()),
+    path('channels/events/', views.ChannelEventList.as_view()),
+    re_path('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),
 ]
-##url('channels/event', views.ChannelEventList.as_view()),
-    ##url('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view())
-
-# url('channels/(?P<pk>[0-9]+)/$/events', views.ChannelEventDetail.as_view()),
-#    url('stat/', views.StatisticList.as_view()),
