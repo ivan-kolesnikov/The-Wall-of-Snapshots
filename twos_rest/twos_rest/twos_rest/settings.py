@@ -108,17 +108,25 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internationalization
 # https://docs.djangoproject.com/en/2.0/topics/i18n/
+TIME_ZONE = 'Europe/Moscow'
 
 LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'Europe/Moscow'
 
 USE_I18N = True
 
 USE_L10N = True
 
-USE_TZ = True
+# do not use Time Zone
+USE_TZ = False
 
+DATETIME_FORMAT = '%Y-%m-%d %H:%M:S'
+
+'''NEW
+DATETIME_FORMAT = '%d-%m-%Y %H:%M:S'
+USE_L10N = False
+# if you plan to disable timezone support
+USE_TZ = False
+'''
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/2.0/howto/static-files/

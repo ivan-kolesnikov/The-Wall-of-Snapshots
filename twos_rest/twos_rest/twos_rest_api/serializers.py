@@ -141,7 +141,19 @@ class UdpUpDownEventChannelSerializer(serializers.ModelSerializer):
 
 
 class CcUdpUpDownEventChannelSerializer(serializers.ModelSerializer):
-    events = CcUdpUpDownEventSerializer(many=True)
+    #events = CcUdpUpDownEventSerializer(many=True)
+    events = serializers.SerializerMethodField('get_eventss')
+
+    def get_eventss(self, channel):
+        from datetime import datetime, timedelta
+        time_from = datetime.now()-timedelta(seconds=60000000)
+        time_to = datetime.now()
+        print("time_from="+str(time_from)+" time_to="+str(time_to))
+        #qs = Event.objects.filter(event_time__gte=datetime.now()-timedelta(seconds=1), channel=channel)
+        qs = Event.objects.filter(event_time__range=(time_from, time_to), CC_errors__isnull=False, channel=channel)
+        serializer = CcUdpUpDownEventSerializer(instance=qs, many=True)
+        return serializer.data
+
 
     class Meta:
         model = Channel

@@ -33,11 +33,11 @@ class Event(models.Model):
     channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True, related_name='events')
     event_time = models.DateTimeField(null=True)
 
-    def __str__(self):
+    '''def __str__(self):
         return self.name
 
     def __unicode__(self):
-        return '%d: %s' % (self.id, str(self.id))
+        return '%d: %s' % (self.id, str(self.id))'''
 
 
 class CC_error(models.Model):
