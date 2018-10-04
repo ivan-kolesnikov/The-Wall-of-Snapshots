@@ -84,23 +84,32 @@ class ChannelEventList(APIView):
         except MultiValueDictKeyError:
             show_updown = 0
 
+        # duration parameters scanner
+        # default duration is 1 day
+        events_duration_sec_default = 86400
+        try:
+            events_duration_sec = int(req_params['duration'])
+        except:
+            events_duration_sec = events_duration_sec_default
+        context = {"duration": events_duration_sec}
+
         # gel all channels
         channels = Channel.objects.all()
         # choose necessery serializser
         if show_cc and not show_udp and not show_updown:
-            serializer = CcEventChannelSerializer(channels, many=True)
+            serializer = CcEventChannelSerializer(channels, many=True, context=context)
         elif not show_cc and show_udp and not show_updown:
-            serializer = UdpEventChannelSerializer(channels, many=True)
+            serializer = UdpEventChannelSerializer(channels, many=True, context=context)
         elif not show_cc and not show_udp and show_updown:
-            serializer = UpDownEventChannelSerializer(channels, many=True)
+            serializer = UpDownEventChannelSerializer(channels, many=True, context=context)
         elif show_cc and show_udp and not show_updown:
-            serializer = CcUdpEventChannelSerializer(channels, many=True)
+            serializer = CcUdpEventChannelSerializer(channels, many=True, context=context)
         elif show_cc and not show_udp and show_updown:
-            serializer = CcUpDownEventChannelSerializer(channels, many=True)
+            serializer = CcUpDownEventChannelSerializer(channels, many=True, context=context)
         elif not show_cc and show_udp and show_updown:
-            serializer = UdpUpDownEventChannelSerializer(channels, many=True)
+            serializer = UdpUpDownEventChannelSerializer(channels, many=True, context=context)
         elif show_cc and show_udp and show_updown:
-            serializer = CcUdpUpDownEventChannelSerializer(channels, many=True)
+            serializer = CcUdpUpDownEventChannelSerializer(channels, many=True, context=context)
         else:
             return Response({'status': 'error',
                              'description': 'check filter, no events to show',
@@ -143,23 +152,32 @@ class ChannelEventDetail(APIView):
                 show_updown = 0
         except MultiValueDictKeyError:
             show_updown = 0
+        # duration parameters scanner
+        # default duration is 1 day
+        events_duration_sec_default = 86400
+        try:
+            events_duration_sec = int(req_params['duration'])
+        except:
+            events_duration_sec = events_duration_sec_default
+        context = {"duration": events_duration_sec}
+
         # get requested channel
         channel = self.get_object(pk)
         # choose necessary serializser
         if show_cc and not show_udp and not show_updown:
-            serializer = CcEventChannelSerializer(channel)
+            serializer = CcEventChannelSerializer(channel, context=context)
         elif not show_cc and show_udp and not show_updown:
-            serializer = UdpEventChannelSerializer(channel)
+            serializer = UdpEventChannelSerializer(channel, context=context)
         elif not show_cc and not show_udp and show_updown:
-            serializer = UpDownEventChannelSerializer(channel)
+            serializer = UpDownEventChannelSerializer(channel, context=context)
         elif show_cc and show_udp and not show_updown:
-            serializer = CcUdpEventChannelSerializer(channel)
+            serializer = CcUdpEventChannelSerializer(channel, context=context)
         elif show_cc and not show_udp and show_updown:
-            serializer = CcUpDownEventChannelSerializer(channel)
+            serializer = CcUpDownEventChannelSerializer(channel, context=context)
         elif not show_cc and show_udp and show_updown:
-            serializer = UdpUpDownEventChannelSerializer(channel)
+            serializer = UdpUpDownEventChannelSerializer(channel, context=context)
         elif show_cc and show_udp and show_updown:
-            serializer = CcUdpUpDownEventChannelSerializer(channel)
+            serializer = CcUdpUpDownEventChannelSerializer(channel, context=context)
         else:
             return Response({'status': 'error',
                              'description': 'check filter, no events to show',
