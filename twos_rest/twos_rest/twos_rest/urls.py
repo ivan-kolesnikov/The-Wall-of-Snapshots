@@ -26,4 +26,5 @@ urlpatterns = [
     re_path('channels/(?P<pk>[0-9]+)/$', views.ChannelDetail.as_view()),
     path('channels/events/', views.ChannelEventList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),
+    path('drops/', views.ChannelDropsList.as_view()),
 ]

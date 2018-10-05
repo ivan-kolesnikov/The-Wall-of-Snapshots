@@ -28,7 +28,7 @@ class ChannelsList(APIView):
 class EventsList(APIView):
     def get(self, request):
         events = Event.objects.all()
-        serializer = EventSerializer(events, many=True)
+        serializer = EventsSerialiser(events, many=True)
         return Response(serializer.data)
 
     def post(self):
@@ -54,6 +54,16 @@ class ChannelDetail(APIView):
         pass
 
     def delete(self, request, pk, format=None):
+        pass
+
+
+class ChannelDropsList(APIView):
+    def get(self, request):
+        channels = Channel.objects.all()
+        serializer = BitrateChannelSerializer(channels, many=True)
+        return Response(serializer.data)
+
+    def put(self):
         pass
 
 
@@ -85,8 +95,8 @@ class ChannelEventList(APIView):
             show_updown = 0
 
         # duration parameters scanner
-        # default duration is 1 day
-        events_duration_sec_default = 86400
+        # default duration is 1 month
+        events_duration_sec_default = 2592000
         try:
             events_duration_sec = int(req_params['duration'])
         except:
@@ -114,6 +124,8 @@ class ChannelEventList(APIView):
             return Response({'status': 'error',
                              'description': 'check filter, no events to show',
                              'usage': '?show_cc=1&show_udp=1&show_updown=1'})
+        print(serializer.data)
+
         return Response(serializer.data)
 
     def post(self):
@@ -153,8 +165,8 @@ class ChannelEventDetail(APIView):
         except MultiValueDictKeyError:
             show_updown = 0
         # duration parameters scanner
-        # default duration is 1 day
-        events_duration_sec_default = 86400
+        # default duration is 1 month
+        events_duration_sec_default = 2592000
         try:
             events_duration_sec = int(req_params['duration'])
         except:

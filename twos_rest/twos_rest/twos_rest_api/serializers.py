@@ -1,9 +1,10 @@
 from rest_framework import serializers
-from .models import Channel, Event, CC_error, UDP_error, Updown_error
+from .models import Channel, Event, CC_error, UDP_error, Updown_error, Bitrate
 from django.db.models import Q
 from datetime import datetime, timedelta
 from django.utils.datastructures import MultiValueDictKeyError
 from rest_framework.validators import UniqueTogetherValidator
+from django.db.models import F
 
 
 class ChannelSerializer(serializers.ModelSerializer):
@@ -224,6 +225,59 @@ class CcUdpUpDownEventChannelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Channel
         fields = ['id', 'name', 'multicast', 'number_default', 'events']
+
+
+class EventsSerialiser(serializers.ModelSerializer):
+    CC_errors = CcErrorSerializer(many=True)
+    UDP_errors = UdpErrorSerializer(many=True)
+    Updown_errors = UpDownErrorSerializer(many=True)
+
+    class Meta:
+        model = Event
+        fields = ['id', 'channel_id', 'event_time', 'CC_errors', 'UDP_errors', 'Updown_errors']
+
+
+class BitrateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bitrate
+        fields = ['bitrate_time', 'bitrate_kbs']
+
+
+class BitrateChannelSerializer(serializers.ModelSerializer):
+    bitrate = serializers.SerializerMethodField('get_dropss')
+
+    def get_dropss(self, channel):
+
+        filtered_bitrate = Bitrate.objects.filter(channel=channel).order_by(F('id').desc())[0]
+        serializer = BitrateSerializer(instance=filtered_bitrate)
+
+        '''
+        filtered_bitr = Bitrate.objects.filter(channel=channel)
+        #print("!!!!!!!!!")
+        #print(filtered_bitr)
+        serializer = BitrateSerializer(instance=filtered_bitr)
+        '''
+        return serializer.data
+
+    class Meta:
+        model = Channel
+        fields = ['id', 'name', 'bitrate']
+
+'''
+class DropsSerializer(serializers.ModelSerializer):
+    drops = serializers.SerializerMethodField('get_dropss')
+
+    def get_dropss(self, channel):
+        #filtered_bitrate = Bitrate.objects.latest('id', channel=channel)
+        filtered_bitrate = Bitrate.objects.filter(bitrate_kbs__gte=30, channel=channel)
+
+        serializer = ButrateChannelSerializer(instance=filtered_bitrate, many=True)
+        return serializer.data
+
+    class Meta:
+        model = Channel
+        fields = ['id', 'drops']
+'''
 
 '''
 class ChannelEventSerializer(serializers.ModelSerializer):

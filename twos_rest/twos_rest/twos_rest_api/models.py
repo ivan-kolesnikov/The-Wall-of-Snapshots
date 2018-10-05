@@ -2,6 +2,9 @@ from django.db import models
 
 # Create your models here.
 from django.db import models
+import datetime
+import dateutil
+
 
 
 class Channel(models.Model):
@@ -13,12 +16,11 @@ class Channel(models.Model):
     def __str__(self):
         return self.name
 
-
 class Bitrate(models.Model):
     id = models.AutoField(primary_key=True)
-    channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True)
+    channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True, related_name='bitrate')
     bitrate_time = models.DateTimeField(null=True)
-    bitrate_kbs = models.PositiveIntegerField()
+    bitrate_kbs = models.PositiveIntegerField(null=True)
 
 
 class Snap(models.Model):
@@ -43,7 +45,7 @@ class Event(models.Model):
 class CC_error(models.Model):
     id = models.AutoField(primary_key=True)
     event = models.ForeignKey(Event, on_delete=models.CASCADE, null=True, related_name='CC_errors')
-    amount = models.PositiveIntegerField()
+    amount = models.PositiveIntegerField(null=True)
 
 
 class UDP_error(models.Model):
