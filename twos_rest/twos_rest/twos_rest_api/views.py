@@ -59,8 +59,22 @@ class ChannelDetail(APIView):
 
 class ChannelDropsList(APIView):
     def get(self, request):
+        # get all channels
         channels = Channel.objects.all()
-        serializer = BitrateChannelSerializer(channels, many=True)
+        # create an empty list for dropped channels
+        dropped_channels_lst = []
+        for channel in channels:
+            # get bitrate object for current channel
+            bitrate_obj = Bitrate.objects.filter(channel_id=channel.id).order_by('id')
+            # get last bitrate for current channel
+            last_bitrate_by_id = bitrate_obj.last()
+            # if last bitrate too low
+            if last_bitrate_by_id.bitrate_kbs < 500:
+                # add affected channel in the channels drop list
+                dropped_channels_lst.append(channel.id)
+        # get dropped channels
+        dropped_channels = Channel.objects.filter(id__in=dropped_channels_lst)
+        serializer = DroppedChannelsSerializer(dropped_channels, many=True)
         return Response(serializer.data)
 
     def put(self):
@@ -73,7 +87,7 @@ class ChannelEventList(APIView):
         show_cc = 1
         show_udp = 1
         show_updown = 1
-        # get parameters from request querry
+        # get parameters from request query
         req_params = request.query_params
         # check show_cc flag
         try:

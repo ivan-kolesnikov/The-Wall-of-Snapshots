@@ -244,46 +244,23 @@ class BitrateSerializer(serializers.ModelSerializer):
 
 
 class BitrateChannelSerializer(serializers.ModelSerializer):
-    bitrate = serializers.SerializerMethodField('get_dropss')
-
-    def get_dropss(self, channel):
-
-        filtered_bitrate = Bitrate.objects.filter(channel=channel).order_by(F('id').desc())[0]
-        serializer = BitrateSerializer(instance=filtered_bitrate)
-
-        '''
-        filtered_bitr = Bitrate.objects.filter(channel=channel)
-        #print("!!!!!!!!!")
-        #print(filtered_bitr)
-        serializer = BitrateSerializer(instance=filtered_bitr)
-        '''
-        return serializer.data
+    bitrate = BitrateSerializer(many=True)
 
     class Meta:
         model = Channel
         fields = ['id', 'name', 'bitrate']
 
-'''
-class DropsSerializer(serializers.ModelSerializer):
-    drops = serializers.SerializerMethodField('get_dropss')
 
-    def get_dropss(self, channel):
-        #filtered_bitrate = Bitrate.objects.latest('id', channel=channel)
-        filtered_bitrate = Bitrate.objects.filter(bitrate_kbs__gte=30, channel=channel)
+class DroppedChannelsSerializer(serializers.ModelSerializer):
+    last_bitrate = serializers.SerializerMethodField("get_last_bitrate_field")
 
-        serializer = ButrateChannelSerializer(instance=filtered_bitrate, many=True)
+    def get_last_bitrate_field(self, channel):
+        bitrate = Bitrate.objects.filter(channel_id=channel.id).order_by('id')
+        last_bitrate = bitrate.last()
+        serializer = BitrateSerializer(instance=last_bitrate)
         return serializer.data
 
     class Meta:
         model = Channel
-        fields = ['id', 'drops']
-'''
+        fields = ['id', 'name', 'last_bitrate']
 
-'''
-class ChannelEventSerializer(serializers.ModelSerializer):
-    events = CcUdpUpDownEventSerializer(many=True)
-
-    class Meta:
-        model = Channel
-        fields = ['id', 'name', 'multicast', 'number_default', 'events']
-'''
