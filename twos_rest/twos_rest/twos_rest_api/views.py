@@ -16,9 +16,13 @@ from rest_framework import status
 from django.http import Http404
 
 
+import mysql.connector
+from mysql.connector import errorcode
+
+
 class ChannelsList(APIView):
     def get(self, request):
-        channels = Channel.objects.all()
+        channels = Channel.objects.all().order_by('number_default')
         serializer = ChannelSerializer(channels, many=True)
         return Response(serializer.data)
 
@@ -57,6 +61,67 @@ class ChannelDetail(APIView):
         channel = self.get_object(pk)
         channel.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ChannelsUpdate(APIView):
+    def get(self, request):
+        # connect to MySQL
+        try:
+            db = mysql.connector.connect(user='root_ivan',
+                                         password='qwerty',
+                                         host='127.0.0.1',
+                                         database='stalker_db')
+            cursor_db = db.cursor(dictionary=True)
+        except mysql.connector.Error as err:
+            if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
+                return Response({'detail': 'Username or password incorrect.'})
+            elif err.errno == errorcode.ER_BAD_DB_ERROR:
+                return Response({'detail': 'Database does not exist.'})
+            else:
+                return Response({'detail': str(err)})
+        except Exception as err:
+            return Response({'detail': 'Failed to connect to the Data Base '+str(err)})
+
+        try:
+            cursor_db.execute("SELECT itv.id, name, mc_cmd as multicast, number as number_default FROM stalker_db.itv "
+                              "LEFT JOIN stalker_db.service_in_package "
+                              "ON stalker_db.service_in_package.service_id=itv.id "
+                              "WHERE (package_id IN (6,8,9,10,11,12,13,14,17,19,20,27,28,30) and status = 1) "
+                              "GROUP BY id, name, cmd ORDER BY number;")
+            channels_production = cursor_db.fetchall()
+        except Exception as err:
+            return Response({'detail': 'Can not select jobs from DB ' + str(err)})
+        # if channels list is empty
+        if len(channels_production) < 1:
+            return Response({'detail': 'Channels list from MySQL DB is empty.'})
+        # fixing legacy dirty hack with <div> in naming
+        for i, _ in enumerate(channels_production):
+            if "div class" in channels_production[i]['name']:
+                start_tag_pos = channels_production[i]['name'].find("<")
+                channels_production[i]['name'] = channels_production[i]['name'][:start_tag_pos] + ' Promo'
+        # get all channels objects
+        channels_api = Channel.objects.all()
+        for channel_api in channels_api:
+            found = 0
+            for channel_production in channels_production:
+                # try to find channel from API in production DB
+                if channel_api.id == channels_production.id:
+                    # check fields and update then if it's necessary
+                    if channel_api.name != channel_production.name:
+                        channel_api.name = channel_production.name
+                    if channel_api.multicast != channel_production.multicast:
+                        channel_api.multicast = channel_production.multicast
+                    if channel_api.number_default != channel_production.number_default:
+                        channel_api.number_default = channel_production.number_default
+                    #!!!! obj.save()
+                    # go to the next channel in case of success
+                    break
+
+            print("33333333333")
+            m += str(channel_api.name)+"_"
+        print(m)
+
+        return Response(channels_api)
 
 
 class EventsList(APIView):
