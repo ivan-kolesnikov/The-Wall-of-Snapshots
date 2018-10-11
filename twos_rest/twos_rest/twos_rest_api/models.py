@@ -8,7 +8,7 @@ import dateutil
 
 
 class Channel(models.Model):
-    id = models.AutoField(primary_key=True)
+    id = models.PositiveIntegerField(primary_key=True)
     name = models.CharField(max_length=150)
     multicast = models.CharField(max_length=100)
     number_default = models.PositiveIntegerField(null=True)

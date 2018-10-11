@@ -10,6 +10,7 @@ from rest_framework.views import APIView
 from .models import Channel, Event
 from .serializers import *
 from rest_framework.response import Response
+from rest_framework import status
 
 
 from django.http import Http404
@@ -21,18 +22,12 @@ class ChannelsList(APIView):
         serializer = ChannelSerializer(channels, many=True)
         return Response(serializer.data)
 
-    def post(self):
-        pass
-    
-    
-class EventsList(APIView):
-    def get(self, request):
-        events = Event.objects.all()
-        serializer = EventsSerialiser(events, many=True)
-        return Response(serializer.data)
-
-    def post(self):
-        pass
+    def post(self, request, format=None):
+        serializer = ChannelSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ChannelDetail(APIView):
@@ -51,9 +46,27 @@ class ChannelDetail(APIView):
         return Response(channel.data)
 
     def put(self, request, pk, format=None):
-        pass
+        channel = self.get_object(pk)
+        serializer = ChannelSerializer(channel, data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self, request, pk, format=None):
+        channel = self.get_object(pk)
+        channel.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class EventsList(APIView):
+    def get(self, request):
+        # get events in desc order
+        events = Event.objects.all().order_by('-id')
+        serializer = EventsSerialiser(events, many=True)
+        return Response(serializer.data)
+
+    def post(self):
         pass
 
 
