@@ -20,6 +20,9 @@ import mysql.connector
 from mysql.connector import errorcode
 
 
+from pprint import pprint
+
+
 class ChannelsList(APIView):
     def get(self, request):
         channels = Channel.objects.all().order_by('number_default')
@@ -70,7 +73,10 @@ class ChannelsUpdate(APIView):
             db = mysql.connector.connect(user='root_ivan',
                                          password='qwerty',
                                          host='127.0.0.1',
-                                         database='stalker_db')
+                                         database='stalker_db',
+                                         charset='utf8mb4',
+                                         use_unicode=True)
+            #db.set_charset_collation('utf8', 'default_collation')
             cursor_db = db.cursor(dictionary=True)
         except mysql.connector.Error as err:
             if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
@@ -101,26 +107,53 @@ class ChannelsUpdate(APIView):
                 channels_production[i]['name'] = channels_production[i]['name'][:start_tag_pos] + ' Promo'
         # get all channels objects
         channels_api = Channel.objects.all()
+        # try to delete unused channels and update channels fields in channels_api
         for channel_api in channels_api:
             found = 0
             for channel_production in channels_production:
                 # try to find channel from API in production DB
-                if channel_api.id == channels_production.id:
+                if channel_api.id == channel_production['id']:
+                    found = 1
                     # check fields and update then if it's necessary
-                    if channel_api.name != channel_production.name:
-                        channel_api.name = channel_production.name
-                    if channel_api.multicast != channel_production.multicast:
-                        channel_api.multicast = channel_production.multicast
-                    if channel_api.number_default != channel_production.number_default:
-                        channel_api.number_default = channel_production.number_default
+                    if channel_api.name != channel_production['name']:
+                        channel_production_raw = channel_production['name']
+                        print("!!!!!!!!!!!!!!!!!!!!")
+                        pprint(channel_production_raw)
+                        print("!!!!!!!!!!!!!!!!!!!!")
+                        channel_api.name = channel_production_raw.encode('utf8')
+                        channel_api.save()
+                        print("UPDATE: NAME")
+                    if channel_api.multicast != channel_production['multicast']:
+                        channel_api.multicast = channel_production['multicast']
+                        channel_api.save()
+                        print("UPDATE: MULTICAST")
+                    if channel_api.number_default != channel_production['number_default']:
+                        channel_api.number_default = channel_production['number_default']
+                        channel_api.save()
+                        print("UPDATE: NUMBER_DEFAULT")
                     #!!!! obj.save()
                     # go to the next channel in case of success
                     break
-
-            print("33333333333")
-            m += str(channel_api.name)+"_"
-        print(m)
-
+            # if channel_id has not found - delete it from channels_api
+            if not found:
+                print("channel_id="+str(channel_api.id))
+                print("DELETE!!!!")
+                channel_api.delete()
+        # trying to find and add new channels from middleware
+        for channel_production in channels_production:
+            found = 0
+            # !!!! maybe is nesseccary to get all channels from API again
+            for channel_api in channels_api:
+                if channels_production['id'] == channel_api.id:
+                    found = 1
+                    break
+            # if channel has not found
+            if not found:
+                # add this channels in api
+                print("ADD NEW CHANNEL")
+                Channel.objects.create(id=channel_production.id, name=channel_production.name,
+                                       multicast=channel_production.multicast,
+                                       number_default=channel_production.number_default)
         return Response(channels_api)
 
 
