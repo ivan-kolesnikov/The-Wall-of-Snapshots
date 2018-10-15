@@ -87,6 +87,7 @@ DATABASES = {
             "init_command": "SET foreign_key_checks = 0;",
             "charset": "utf8",
         },
+        "COLLATION": "utf8_general_ci"
     }
 }
 #            "charset": "utf8mb4_unicode_ci",

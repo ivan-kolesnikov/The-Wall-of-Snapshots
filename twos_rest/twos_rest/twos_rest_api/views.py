@@ -68,13 +68,14 @@ class ChannelDetail(APIView):
 
 class ChannelsUpdate(APIView):
     def get(self, request):
+        print("NEW CYCLE!!!!!")
         # connect to MySQL
         try:
             db = mysql.connector.connect(user='root_ivan',
                                          password='qwerty',
                                          host='127.0.0.1',
                                          database='stalker_db',
-                                         charset='utf8mb4',
+                                         charset='cp1251',
                                          use_unicode=True)
             #db.set_charset_collation('utf8', 'default_collation')
             cursor_db = db.cursor(dictionary=True)
@@ -115,6 +116,7 @@ class ChannelsUpdate(APIView):
                 if channel_api.id == channel_production['id']:
                     found = 1
                     # check fields and update then if it's necessary
+                    '''
                     if channel_api.name != channel_production['name']:
                         channel_production_raw = channel_production['name']
                         print("!!!!!!!!!!!!!!!!!!!!")
@@ -131,6 +133,7 @@ class ChannelsUpdate(APIView):
                         channel_api.number_default = channel_production['number_default']
                         channel_api.save()
                         print("UPDATE: NUMBER_DEFAULT")
+                    '''
                     #!!!! obj.save()
                     # go to the next channel in case of success
                     break
@@ -144,18 +147,18 @@ class ChannelsUpdate(APIView):
             found = 0
             # !!!! maybe is nesseccary to get all channels from API again
             for channel_api in channels_api:
-                if channels_production['id'] == channel_api.id:
+                if channel_production['id'] == channel_api.id:
                     found = 1
                     break
             # if channel has not found
             if not found:
                 # add this channels in api
                 print("ADD NEW CHANNEL")
-                Channel.objects.create(id=channel_production.id, name=channel_production.name,
-                                       multicast=channel_production.multicast,
-                                       number_default=channel_production.number_default)
-        return Response(channels_api)
-
+                Channel.objects.create(id=channel_production['id'], name=channel_production['name'],
+                                       multicast=channel_production['multicast'],
+                                       number_default=channel_production['number_default'])
+        #return Response(channels_api)
+        return Response("DONE!")
 
 class EventsList(APIView):
     def get(self, request):
