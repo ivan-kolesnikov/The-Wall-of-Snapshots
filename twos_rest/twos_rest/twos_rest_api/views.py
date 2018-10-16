@@ -68,7 +68,9 @@ class ChannelDetail(APIView):
 
 class ChannelsUpdate(APIView):
     def get(self, request):
-        print("NEW CYCLE!!!!!")
+        deleted_channels_cnt = 0
+        updated_channels_cnt = 0
+        added_channels_cnt = 0
         # connect to MySQL
         try:
             db = mysql.connector.connect(user='root_ivan',
@@ -77,7 +79,6 @@ class ChannelsUpdate(APIView):
                                          database='stalker_db',
                                          charset='cp1251',
                                          use_unicode=True)
-            #db.set_charset_collation('utf8', 'default_collation')
             cursor_db = db.cursor(dictionary=True)
         except mysql.connector.Error as err:
             if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
@@ -88,7 +89,7 @@ class ChannelsUpdate(APIView):
                 return Response({'detail': str(err)})
         except Exception as err:
             return Response({'detail': 'Failed to connect to the Data Base '+str(err)})
-
+        # select information about target channels
         try:
             cursor_db.execute("SELECT itv.id, name, mc_cmd as multicast, number as number_default FROM stalker_db.itv "
                               "LEFT JOIN stalker_db.service_in_package "
@@ -116,49 +117,55 @@ class ChannelsUpdate(APIView):
                 if channel_api.id == channel_production['id']:
                     found = 1
                     # check fields and update then if it's necessary
-                    '''
+                    need_to_save_changes = 0
                     if channel_api.name != channel_production['name']:
-                        channel_production_raw = channel_production['name']
-                        print("!!!!!!!!!!!!!!!!!!!!")
-                        pprint(channel_production_raw)
-                        print("!!!!!!!!!!!!!!!!!!!!")
-                        channel_api.name = channel_production_raw.encode('utf8')
-                        channel_api.save()
-                        print("UPDATE: NAME")
+                        channel_api.name = channel_production['name']
+                        need_to_save_changes = 1
                     if channel_api.multicast != channel_production['multicast']:
                         channel_api.multicast = channel_production['multicast']
-                        channel_api.save()
-                        print("UPDATE: MULTICAST")
+                        need_to_save_changes = 1
                     if channel_api.number_default != channel_production['number_default']:
                         channel_api.number_default = channel_production['number_default']
+                        need_to_save_changes = 1
+                    # if need to commit changes in DB
+                    if need_to_save_changes:
                         channel_api.save()
-                        print("UPDATE: NUMBER_DEFAULT")
-                    '''
-                    #!!!! obj.save()
+                        # increase updated channels counter
+                        updated_channels_cnt += 1
                     # go to the next channel in case of success
                     break
-            # if channel_id has not found - delete it from channels_api
+            # if channel_id has not found
             if not found:
-                print("channel_id="+str(channel_api.id))
-                print("DELETE!!!!")
+                # delete that channel from channels_api
                 channel_api.delete()
+                # and increase counter
+                deleted_channels_cnt += 1
+        # list of new channels to bulk create
+        channels_to_add_lst = []
         # trying to find and add new channels from middleware
         for channel_production in channels_production:
             found = 0
-            # !!!! maybe is nesseccary to get all channels from API again
             for channel_api in channels_api:
                 if channel_production['id'] == channel_api.id:
                     found = 1
                     break
             # if channel has not found
             if not found:
-                # add this channels in api
-                print("ADD NEW CHANNEL")
-                Channel.objects.create(id=channel_production['id'], name=channel_production['name'],
-                                       multicast=channel_production['multicast'],
-                                       number_default=channel_production['number_default'])
-        #return Response(channels_api)
-        return Response("DONE!")
+                # add this channel to list for multiple insert
+                channels_to_add_lst.append(Channel(id=channel_production['id'], name=channel_production['name'],
+                                                   multicast=channel_production['multicast'],
+                                                   number_default=channel_production['number_default']))
+                # and increase counter
+                added_channels_cnt += 1
+        # if list of channels to add in API isn't empty
+        if len(channels_to_add_lst):
+            # insert all necessary channels to API
+            Channel.objects.bulk_create(channels_to_add_lst)
+        return Response({'status': 'success',
+                         'channels deleted': str(deleted_channels_cnt),
+                         'channels updated': str(updated_channels_cnt),
+                         'channels added': str(added_channels_cnt)})
+
 
 class EventsList(APIView):
     def get(self, request):
