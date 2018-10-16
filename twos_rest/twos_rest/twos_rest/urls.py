@@ -22,10 +22,10 @@ from django.urls import path, re_path
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('channels/', views.ChannelsList.as_view()),
-    path('channels/update/', views.ChannelsUpdate.as_view()),
-    path('events/', views.EventsList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/$', views.ChannelDetail.as_view()),
+    path('channels/update/', views.ChannelsUpdate.as_view()),
+    path('channels/down/', views.ChannelDropsList.as_view()),
     path('channels/events/', views.ChannelEventList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),
-    path('drops/', views.ChannelDropsList.as_view()),
+    path('events/', views.EventsList.as_view()),
 ]

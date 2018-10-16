@@ -185,14 +185,18 @@ class ChannelDropsList(APIView):
         # create an empty list for dropped channels
         dropped_channels_lst = []
         for channel in channels:
-            # get bitrate object for current channel
-            bitrate_obj = Bitrate.objects.filter(channel_id=channel.id).order_by('id')
-            # get last bitrate for current channel
-            last_bitrate_by_id = bitrate_obj.last()
-            # if last bitrate too low
-            if last_bitrate_by_id.bitrate_kbs < 500:
-                # add affected channel in the channels drop list
-                dropped_channels_lst.append(channel.id)
+            # prevent crash if bitrate_kbs isn't exist for current channel
+            try:
+                # get bitrate object for current channel
+                bitrate_obj = Bitrate.objects.filter(channel_id=channel.id).order_by('id')
+                # get last bitrate for current channel
+                last_bitrate_by_id = bitrate_obj.last()
+                # if last bitrate too low
+                if last_bitrate_by_id.bitrate_kbs <= 400:
+                    # add affected channel in the channels drop list
+                    dropped_channels_lst.append(channel.id)
+            except Exception as _:
+                continue
         # get dropped channels
         dropped_channels = Channel.objects.filter(id__in=dropped_channels_lst)
         serializer = DroppedChannelsSerializer(dropped_channels, many=True)
