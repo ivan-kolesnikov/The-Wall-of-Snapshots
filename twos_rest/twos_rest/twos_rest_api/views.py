@@ -162,9 +162,9 @@ class ChannelsUpdate(APIView):
             # insert all necessary channels to API
             Channel.objects.bulk_create(channels_to_add_lst)
         return Response({'status': 'success',
-                         'channels deleted': str(deleted_channels_cnt),
-                         'channels updated': str(updated_channels_cnt),
-                         'channels added': str(added_channels_cnt)})
+                         'channels_deleted': str(deleted_channels_cnt),
+                         'channels_updated': str(updated_channels_cnt),
+                         'channels_added': str(added_channels_cnt)})
 
 
 class EventsList(APIView):
@@ -176,6 +176,15 @@ class EventsList(APIView):
 
     def post(self):
         pass
+
+
+class ConfigList(APIView):
+    def get(self, request):
+        return Response({'guard_ip': '127.0.0.1',
+                         'guard_port': '8787',
+                         'min_bitrate_kbs': '400',
+                         })
+
 
 
 class ChannelDropsList(APIView):
