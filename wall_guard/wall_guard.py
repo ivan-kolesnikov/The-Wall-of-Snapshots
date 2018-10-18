@@ -9,11 +9,14 @@ import signal
 import atexit
 from datetime import datetime
 import subprocess
+import requests
+import re
 
 pid_file = ""
 log_file = ""
 node_name = ""
 sleep_time = 0
+default_rest_api_url = "http://127.0.0.1:8585/"
 default_config_path = os.path.dirname(os.path.realpath(__file__))+'/wall_guard.ini'
 
 
@@ -81,11 +84,96 @@ def start():
             log_guard(get_current_time()+" Trying to start the Wall Guard, but it's already running, pid="+str(pid))
             sys.exit(1)
     # Start the daemon
-    transform_to_daemon()
+    # transform_to_daemon()
     run()
 
 
+def get_active_processes():
+    active_processes = []
+    application_str_for_ps = "[r]_m_analyzer"
+    output_processes_byte, err = subprocess.Popen("ps -fela | grep \'" + application_str_for_ps +
+                                                  "' | awk \'{print $4,$1=$2=$3=$4=$5=$6=$7=$8="
+                                                  "$9=$10=$11=$12=$13=$14=\"\",$0}\'",
+                                                  shell=True, stdout=subprocess.PIPE).communicate()
+    output_processes_str = output_processes_byte.decode("utf-8")
+    # if no one running process for this application
+    if output_processes_str != "":
+        output_processes = output_processes_str.rstrip().split("\n")
+        for output_process in output_processes:
+            try:
+                # 15 spaces between pid and command in the output_process !!!EXTRA ATTENTION 15 or 16 spaces
+                output_process_info = output_process.split("               ")
+                if " --channel-id " in output_process_info[1]:
+                    re_pattern = "--channel-id\s\d*"
+                else:
+                    re_pattern = "-i\s\d*"
+                channel_id_from_ps = re.findall(re_pattern, output_process_info[1])
+                if len(channel_id_from_ps) != 0:
+                    channel_id_lst = channel_id_from_ps[0].split(" ")
+                    channel_id = channel_id_lst[1]
+                else:
+                    channel_id = -1
+                # append the result list
+                active_processes.append({"pid": int(output_process_info[0]),
+                                         "command": output_process_info[1], "id": int(channel_id)})
+            # return an empty processes list in case of parsing error
+            except Exception as err:
+                log_guard(get_current_time()+" Can't parse output from ps utility - return an empty list.")
+                return []
+    return active_processes
+
+
+def kill_processes_out_of_api_scope():
+    # get all channels from API
+    channels = requests.get(args.rest_url+'channels/').json()
+    # if list of channels is empty
+    if len(channels) == 0:
+        log_guard(get_current_time()+" The list of channels from API is empty.")
+        return -1
+    processes = get_active_processes()
+    if len(processes) == 0:
+        log_guard(get_current_time()+" The list of processes from ps utility is empty. "
+                                     "We don't have any processes to check and kill then.")
+        return -1
+    for process in processes:
+        channel_id_has_not_found_in_api = 1
+        for channel in channels:
+            if process['id'] == channel['id']:
+                channel_id_has_not_found_in_api = 0
+                break
+        if channel_id_has_not_found_in_api:
+            try:
+                os.kill(process['pid'], signal.SIGKILL)
+            except Exception as err:
+                log_guard(get_current_time()+" The process is out of REST API scope. Could not stop it. pid = " +
+                          process['pid']+" command = "+process['command'] + ". By the following reason: "+str(err))
+    return 0
+
+
+def run_r_m_analyzers():
+    config = requests.get(args.rest_url+'config/').json()
+    if len(config) == 0:
+        log_guard(get_current_time()+" Can't get configuration data from API")
+
+
+
+    cc = "./r_m_analyzer --address-mcast 235.1.10.2 --port-mcast 10000 -i 110 --channel-name 'rossiya1' -A 127.0.0.1 -P 8787"
+
+
+
+
 def run():
+    kill_processes_out_of_api_scope()
+    g = 0
+    # task for start necessary and stop unnecessary channels
+
+
+    #r = requests.post("http://127.0.0.1:8585/channels/", json=[{'id': '125247', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}, {'id': '125246', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}])
+    #r = requests.put("http://127.0.0.1:8585/channels/125245/", data={'id': 125245, 'name': 'test_e', 'multicast': 'rtp://ttttttttt', 'number_default': 44})
+    r = requests.delete("http://127.0.0.1:8585/channels/125244/")
+    print(r.status_code, r.reason)
+    print(r.text[:300] + '...')
+    # fields = ['id', 'name', 'multicast', 'number_default']
     i = 0
 
 
@@ -212,6 +300,7 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--guard_state', help='start/stop/restart/status guard', default='start')
     parser.add_argument('-f', '--force_start', help='guard force start flag', default=0, type=int)
     parser.add_argument('-c', '--config_path', help='configuration file path', default=default_config_path)
+    parser.add_argument('-r', '--rest_url', help='REST API url', default=default_rest_api_url)
     args = parser.parse_args()
     # read configuration file
     configuration_file = get_config()
