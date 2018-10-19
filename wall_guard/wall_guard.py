@@ -4,7 +4,6 @@ import os
 import sys
 import time
 import argparse
-import configparser
 import signal
 import atexit
 from datetime import datetime
@@ -12,12 +11,10 @@ import subprocess
 import requests
 import re
 
-pid_file = ""
-log_file = ""
-node_name = ""
-sleep_time = 0
+pid_file = os.path.dirname(os.path.realpath(__file__))+'/guard.pid'
+log_file = os.path.dirname(os.path.realpath(__file__))+'/guard.log'
 default_rest_api_url = "http://127.0.0.1:8585/"
-default_config_path = os.path.dirname(os.path.realpath(__file__))+'/wall_guard.ini'
+sleep_time = 0
 
 
 def transform_to_daemon():
@@ -81,7 +78,7 @@ def start():
         # if the guard process exist
         else:
             print("\033[91m"+"The Wall Guard is already running"+"\033[0m")
-            log_guard(get_current_time()+" Trying to start the Wall Guard, but it's already running, pid="+str(pid))
+            log_guard("Trying to start the Wall Guard, but it's already running, pid="+str(pid))
             sys.exit(1)
     # Start the daemon
     # transform_to_daemon()
@@ -118,7 +115,7 @@ def get_active_processes():
                                          "command": output_process_info[1], "id": int(channel_id)})
             # return an empty processes list in case of parsing error
             except Exception as err:
-                log_guard(get_current_time()+" Can't parse output from ps utility - return an empty list.")
+                log_guard("Can't parse output from ps utility - return an empty list.")
                 return []
     return active_processes
 
@@ -128,12 +125,12 @@ def kill_processes_out_of_api_scope():
     channels = requests.get(args.rest_url+'channels/').json()
     # if list of channels is empty
     if len(channels) == 0:
-        log_guard(get_current_time()+" The list of channels from API is empty.")
+        log_guard("The list of channels from API is empty.")
         return -1
     processes = get_active_processes()
     if len(processes) == 0:
-        log_guard(get_current_time()+" The list of processes from ps utility is empty. "
-                                     "We don't have any processes to check and kill then.")
+        log_guard("The list of processes from ps utility is empty. "
+                  "We don't have any processes to check and kill then.")
         return -1
     for process in processes:
         channel_id_has_not_found_in_api = 1
@@ -145,7 +142,7 @@ def kill_processes_out_of_api_scope():
             try:
                 os.kill(process['pid'], signal.SIGKILL)
             except Exception as err:
-                log_guard(get_current_time()+" The process is out of REST API scope. Could not stop it. pid = " +
+                log_guard("The process is out of REST API scope. Could not stop it. pid = " +
                           process['pid']+" command = "+process['command'] + ". By the following reason: "+str(err))
     return 0
 
@@ -153,7 +150,7 @@ def kill_processes_out_of_api_scope():
 def run_r_m_analyzers():
     config = requests.get(args.rest_url+'config/').json()
     if len(config) == 0:
-        log_guard(get_current_time()+" Can't get configuration data from API")
+        log_guard("Can't get configuration data from API")
 
 
 
@@ -186,7 +183,7 @@ def stop():
         pid = None
     if not pid:
         print("\033[91m"+"Pid file does not exist. The Wall Guard is not running"+"\033[0m")
-        log_guard(get_current_time()+" Trying to start the Wall Guard. Pid file does not exist")
+        log_guard("Trying to start the Wall Guard. Pid file does not exist")
         # empty return - no error in case of restart
         return
 
@@ -276,19 +273,9 @@ def main():
         parser.print_help()
 
 
-def get_config():
-    config_ini = configparser.ConfigParser(interpolation=None)
-    try:
-        config_ini.read(args.config_path)
-    except Exception as err:
-        log_guard(get_current_time()+" Failed to open config file. "+str(err))
-        return -1
-    return config_ini
-
-
 def log_guard(message):
     with open(log_file, 'a') as log:
-        log.write(message+'\n')
+        log.write(get_current_time()+' '+message+'\n')
 
 
 def get_current_time():
@@ -299,18 +286,19 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='The Wall Guard application for the Processing Control')
     parser.add_argument('-s', '--guard_state', help='start/stop/restart/status guard', default='start')
     parser.add_argument('-f', '--force_start', help='guard force start flag', default=0, type=int)
-    parser.add_argument('-c', '--config_path', help='configuration file path', default=default_config_path)
     parser.add_argument('-r', '--rest_url', help='REST API url', default=default_rest_api_url)
+    parser.add_argument('-i', '--guard_id', help='guard id', default=1, type=int)
     args = parser.parse_args()
-    # read configuration file
-    configuration_file = get_config()
-    # can not open database connection without credentials
-    if configuration_file == -1:
-        print('Can not open configuration file. Check the -c parameter')
+    try:
+        # get all channels from API
+        config = requests.get(args.rest_url+'guards/'+str(args.guard_id)+'/config/').json()
+    except Exception as err:
+        print(str(err))
+        config = []
+    if len(config) == 0:
+        print('Can not connect to the rest server. Check rest_url and guard_id.')
         sys.exit(1)
     else:
-        pid_file = configuration_file['GUARD']['pid']
-        log_file = configuration_file['GUARD']['log']
-        sleep_time = int(configuration_file['GUARD']['sleep_time_seconds'])
+        sleep_time = config['sleep_time']
 
     main()
