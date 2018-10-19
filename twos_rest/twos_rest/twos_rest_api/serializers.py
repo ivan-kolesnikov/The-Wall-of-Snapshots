@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Channel, Event, CC_error, UDP_error, Updown_error, Bitrate
+from .models import Channel, Event, CC_error, UDP_error, Updown_error, Bitrate, Guard
 from django.db.models import Q
 from datetime import datetime, timedelta
 from django.utils.datastructures import MultiValueDictKeyError
@@ -11,6 +11,12 @@ class ChannelSerializer(serializers.ModelSerializer):
     class Meta:
         model = Channel
         fields = ['id', 'name', 'multicast', 'number_default']
+
+
+class GuardConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Guard
+        fields = ['id', 'ip', 'port', 'min_bitrate_kbs', 'sleep_time']
 
 
 # Simple Events

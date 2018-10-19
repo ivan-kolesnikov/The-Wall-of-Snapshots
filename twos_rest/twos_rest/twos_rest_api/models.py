@@ -6,6 +6,14 @@ import datetime
 import dateutil
 
 
+class Guard(models.Model):
+    id = models.AutoField(primary_key=True)
+    ip = models.CharField(max_length=100)
+    port = models.PositiveIntegerField(null=True)
+    min_bitrate_kbs = models.PositiveIntegerField(null=True)
+    sleep_time = models.PositiveIntegerField(null=True)
+
+
 
 class Channel(models.Model):
     id = models.PositiveIntegerField(primary_key=True)

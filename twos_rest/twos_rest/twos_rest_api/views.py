@@ -7,7 +7,7 @@ from rest_framework import viewsets
 #from twos_rest.twos_rest.twos_rest_api.models import
 
 from rest_framework.views import APIView
-from .models import Channel, Event
+from .models import Channel, Event, Guard
 from .serializers import *
 from rest_framework.response import Response
 from rest_framework import status
@@ -64,6 +64,26 @@ class ChannelDetail(APIView):
         channel = self.get_object(pk)
         channel.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class GuardConfigList(APIView):
+    def get(self, request):
+        guards = Guard.objects.all()
+        serializer = GuardConfigSerializer(guards, many=True)
+        return Response(serializer.data)
+
+
+class GuardConfigDetail(APIView):
+    def get_object(self, pk):
+        try:
+            return Guard.objects.get(pk=pk)
+        except Guard.DoesNotExist:
+            raise Http404
+
+    def get(self, request, pk, format=None):
+        guard = self.get_object(pk)
+        serializer = GuardConfigSerializer(guard)
+        return Response(serializer.data)
 
 
 class ChannelsUpdate(APIView):
@@ -176,15 +196,6 @@ class EventsList(APIView):
 
     def post(self):
         pass
-
-
-class ConfigList(APIView):
-    def get(self, request):
-        return Response({'guard_ip': '127.0.0.1',
-                         'guard_port': '8787',
-                         'min_bitrate_kbs': '400',
-                         })
-
 
 
 class ChannelDropsList(APIView):

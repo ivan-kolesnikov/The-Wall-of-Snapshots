@@ -28,5 +28,6 @@ urlpatterns = [
     path('channels/events/', views.ChannelEventList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),
     path('events/', views.EventsList.as_view()),
-    path('config/', views.ConfigList.as_view()),
+    path('guards/config/', views.GuardConfigList.as_view()),
+    re_path('guards/(?P<pk>[0-9]+)/config/', views.GuardConfigDetail.as_view()),
 ]
