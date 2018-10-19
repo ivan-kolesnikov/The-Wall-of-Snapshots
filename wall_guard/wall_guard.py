@@ -13,6 +13,7 @@ import re
 
 pid_file = os.path.dirname(os.path.realpath(__file__))+'/guard.pid'
 log_file = os.path.dirname(os.path.realpath(__file__))+'/guard.log'
+r_m_analyzer_path = os.path.dirname(os.path.realpath(__file__))+'/r_m_analyzer'
 default_rest_api_url = "http://127.0.0.1:8585/"
 sleep_time = 0
 
@@ -121,12 +122,15 @@ def get_active_processes():
 
 
 def kill_processes_out_of_api_scope():
-    # get all channels from API
-    channels = requests.get(args.rest_url+'channels/').json()
-    # if list of channels is empty
+    # get channels from REST API
+    try:
+        channels = requests.get(args.rest_url+'channels/').json()
+    except Exception as err:
+        log_guard('Can not get channels from rest server. Detail: '+str(err))
     if len(channels) == 0:
-        log_guard("The list of channels from API is empty.")
+        print('The list of channels from REST API is empty')
         return -1
+    # get processes from ps utility
     processes = get_active_processes()
     if len(processes) == 0:
         log_guard("The list of processes from ps utility is empty. "
@@ -148,9 +152,47 @@ def kill_processes_out_of_api_scope():
 
 
 def run_r_m_analyzers():
-    config = requests.get(args.rest_url+'config/').json()
+    # get guard config from REST API
+    try:
+        config = requests.get(args.rest_url+'guards/'+str(args.guard_id)+'/config/').json()
+    except Exception as err:
+        log_guard('Rest server connection error. Detail: '+str(err))
+        config = []
     if len(config) == 0:
-        log_guard("Can't get configuration data from API")
+        print('Can not connect to the rest server. Check rest_url and guard_id.')
+        return -1
+    # get channels from REST API
+    try:
+        channels = requests.get(args.rest_url+'channels/').json()
+    except Exception as err:
+        log_guard('Can not get channels from rest server. Detail: '+str(err))
+    if len(channels) == 0:
+        print('The list of channels from REST API is empty')
+        return -1
+    # get processes from ps utility
+    processes = get_active_processes()
+    if len(processes) == 0:
+        log_guard("The list of processes from ps utility is empty. "
+                  "We don't have any processes to understand how many new instances are necessary to start.")
+        return -1
+
+    for channel in channels:
+        channel_id_has_not_found_in_processes_list= 1
+        for process in processes:
+            if channel['id'] == process['id']:
+                channel_id_has_not_found_in_processes_list = 0
+                break
+        if channel_id_has_not_found_in_processes_list:
+            # try to run process
+            channel_ip_port = channel['multicast'].split(":")
+            # magic number 2 to skip '//' in multicast address
+            channel_ip = channel_ip_port[1][2:]
+            channel_port = channel_ip_port[2]
+
+            r_m_analyzer_run_cmd_str = r_m_analyzer_path+" --address-mcast "+channel['']
+
+
+
 
 
 
@@ -291,14 +333,14 @@ if __name__ == '__main__':
     args = parser.parse_args()
     try:
         # get all channels from API
-        config = requests.get(args.rest_url+'guards/'+str(args.guard_id)+'/config/').json()
+        guard_config = requests.get(args.rest_url+'guards/'+str(args.guard_id)+'/config/').json()
     except Exception as err:
         print(str(err))
-        config = []
-    if len(config) == 0:
+        guard_config = []
+    if len(guard_config) == 0:
         print('Can not connect to the rest server. Check rest_url and guard_id.')
         sys.exit(1)
     else:
-        sleep_time = config['sleep_time']
+        sleep_time = guard_config['sleep_time']
 
     main()
