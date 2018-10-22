@@ -10,12 +10,21 @@ from datetime import datetime
 import subprocess
 import requests
 import re
+import shlex
+from enum import Enum
+import json
 
 pid_file = os.path.dirname(os.path.realpath(__file__))+'/guard.pid'
 log_file = os.path.dirname(os.path.realpath(__file__))+'/guard.log'
 r_m_analyzer_path = os.path.dirname(os.path.realpath(__file__))+'/r_m_analyzer'
 default_rest_api_url = "http://127.0.0.1:8585/"
 sleep_time = 0
+tasks = []
+
+
+class EnTasksNames(Enum):
+    sync_analyzers = 0
+    collect_analyzers_statuses = 1
 
 
 def transform_to_daemon():
@@ -25,8 +34,8 @@ def transform_to_daemon():
         if pid > 0:
             # exit first parent
             sys.exit(0)
-    except OSError as err:
-        sys.stderr.write(get_current_time()+'_Fork #1 failed: {0}\n'.format(err))
+    except OSError as error:
+        sys.stderr.write(get_current_time()+'_Fork #1 failed: {0}\n'.format(error))
         sys.exit(1)
     # decouple from parent environment
     os.chdir('/')
@@ -38,8 +47,8 @@ def transform_to_daemon():
         if pid > 0:
             # exit from second parent
             sys.exit(0)
-    except OSError as err:
-        sys.stderr.write(get_current_time()+'_Fork #2 failed: {0}\n'.format(err))
+    except OSError as error:
+        sys.stderr.write(get_current_time()+'_Fork #2 failed: {0}\n'.format(error))
         sys.exit(1)
     # redirect standard file descriptors
     sys.stdout.flush()
@@ -89,10 +98,10 @@ def start():
 def get_active_processes():
     active_processes = []
     application_str_for_ps = "[r]_m_analyzer"
-    output_processes_byte, err = subprocess.Popen("ps -fela | grep \'" + application_str_for_ps +
-                                                  "' | awk \'{print $4,$1=$2=$3=$4=$5=$6=$7=$8="
-                                                  "$9=$10=$11=$12=$13=$14=\"\",$0}\'",
-                                                  shell=True, stdout=subprocess.PIPE).communicate()
+    output_processes_byte, ps_err = subprocess.Popen("ps -fela | grep \'" + application_str_for_ps +
+                                                     "' | awk \'{print $4,$1=$2=$3=$4=$5=$6=$7=$8="
+                                                     "$9=$10=$11=$12=$13=$14=\"\",$0}\'",
+                                                     shell=True, stdout=subprocess.PIPE).communicate()
     output_processes_str = output_processes_byte.decode("utf-8")
     # if no one running process for this application
     if output_processes_str != "":
@@ -115,18 +124,19 @@ def get_active_processes():
                 active_processes.append({"pid": int(output_process_info[0]),
                                          "command": output_process_info[1], "id": int(channel_id)})
             # return an empty processes list in case of parsing error
-            except Exception as err:
-                log_guard("Can't parse output from ps utility - return an empty list.")
+            except Exception as error:
+                log_guard("Can't parse output from ps utility - return an empty list. Detail: " + str(error))
                 return []
     return active_processes
 
 
 def kill_processes_out_of_api_scope():
     # get channels from REST API
+    channels = []
     try:
         channels = requests.get(args.rest_url+'channels/').json()
-    except Exception as err:
-        log_guard('Can not get channels from rest server. Detail: '+str(err))
+    except Exception as error:
+        log_guard('Can not get channels from rest server. Detail: ' + str(error))
     if len(channels) == 0:
         print('The list of channels from REST API is empty')
         return -1
@@ -145,9 +155,9 @@ def kill_processes_out_of_api_scope():
         if channel_id_has_not_found_in_api:
             try:
                 os.kill(process['pid'], signal.SIGKILL)
-            except Exception as err:
+            except Exception as error:
                 log_guard("The process is out of REST API scope. Could not stop it. pid = " +
-                          process['pid']+" command = "+process['command'] + ". By the following reason: "+str(err))
+                          process['pid']+" command = "+process['command'] + ". By the following reason: "+str(error))
     return 0
 
 
@@ -155,17 +165,18 @@ def run_r_m_analyzers():
     # get guard config from REST API
     try:
         config = requests.get(args.rest_url+'guards/'+str(args.guard_id)+'/config/').json()
-    except Exception as err:
-        log_guard('Rest server connection error. Detail: '+str(err))
+    except Exception as error:
+        log_guard('Rest server connection error. Detail: '+str(error))
         config = []
     if len(config) == 0:
         print('Can not connect to the rest server. Check rest_url and guard_id.')
         return -1
     # get channels from REST API
+    channels = []
     try:
         channels = requests.get(args.rest_url+'channels/').json()
-    except Exception as err:
-        log_guard('Can not get channels from rest server. Detail: '+str(err))
+    except Exception as error:
+        log_guard('Can not get channels from rest server. Detail: '+str(error))
     if len(channels) == 0:
         print('The list of channels from REST API is empty')
         return -1
@@ -175,9 +186,9 @@ def run_r_m_analyzers():
         log_guard("The list of processes from ps utility is empty. "
                   "We don't have any processes to understand how many new instances are necessary to start.")
         return -1
-
+    # run all necessary r_m_analyzer processes
     for channel in channels:
-        channel_id_has_not_found_in_processes_list= 1
+        channel_id_has_not_found_in_processes_list = 1
         for process in processes:
             if channel['id'] == process['id']:
                 channel_id_has_not_found_in_processes_list = 0
@@ -188,32 +199,74 @@ def run_r_m_analyzers():
             # magic number 2 to skip '//' in multicast address
             channel_ip = channel_ip_port[1][2:]
             channel_port = channel_ip_port[2]
+            r_m_analyzer_run_cmd_str = r_m_analyzer_path + " --address-mcast " + channel_ip + \
+                                                           " --port-mcast " + channel_port + \
+                                                           " -i " + str(channel['id']) + \
+                                                           " --channel-name '" + channel['name'] + \
+                                                           "' --address-output " + config['ip'] + \
+                                                           " --port-output " + str(config['port'])
+            command = shlex.split(r_m_analyzer_run_cmd_str)
+            # try to start r_m_analyzer
+            try:
+                r_m_analyzer_process = subprocess.Popen(command, start_new_session=True,
+                                                        stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+                r_m_analyzer_pid = r_m_analyzer_process.pid
+                log_guard("r_m_analzer has been started. channel_id=" + str(channel['id']) +
+                          " channel_name='" + channel['name'] + "' pid=" + str(r_m_analyzer_pid))
+            except Exception as error:
+                log_guard("r_m_analyzer hasn't started. channel_id=" + str(channel['id']) +
+                          " channel_name='" + channel['name'] + "' Detail: " + str(error))
 
-            r_m_analyzer_run_cmd_str = r_m_analyzer_path+" --address-mcast "+channel['']
+
+def add_task(task_name, priority_time, task_id=-1):
+    # no one the same task
+    for task in tasks:
+        if task_name.name == task['task']:
+            if task_id == task['task_id']:
+                return -1
+    tasks.append(json.loads('{"task_id" : '+str(task_id)+', "task" : "'+task_name.name +
+                            '", "priority_time" : '+str(priority_time)+'}'))
+    return 0
 
 
+def task_handler():
+    global tasks
+    for task in tasks:
+        task['priority_time'] -= sleep_time
+        # if need to do this task
+        if task['priority_time'] < 1:
+            # check and kill all unnecessary analyzers
+            if task['task'] == EnTasksNames.sync_analyzers.name:
+                kill_processes_out_of_api_scope()
+                run_r_m_analyzers()
+            elif task['task'] == EnTasksNames.collect_analyzers_statuses.name:
+                collect_analyzers_statuses()
+
+    # delete completed tasks
+    tasks_count = len(tasks)
+    i = 0
+    j = 0
+    while j < tasks_count:
+        if tasks[i]['priority_time'] < 1:
+            del tasks[i]
+            i -= 1
+        i += 1
+        j += 1
 
 
-
-
-    cc = "./r_m_analyzer --address-mcast 235.1.10.2 --port-mcast 10000 -i 110 --channel-name 'rossiya1' -A 127.0.0.1 -P 8787"
-
-
+def collect_analyzers_statuses():
+    h = 0
 
 
 def run():
-    kill_processes_out_of_api_scope()
-    g = 0
-    # task for start necessary and stop unnecessary channels
-
-
-    #r = requests.post("http://127.0.0.1:8585/channels/", json=[{'id': '125247', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}, {'id': '125246', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}])
-    #r = requests.put("http://127.0.0.1:8585/channels/125245/", data={'id': 125245, 'name': 'test_e', 'multicast': 'rtp://ttttttttt', 'number_default': 44})
-    r = requests.delete("http://127.0.0.1:8585/channels/125244/")
-    print(r.status_code, r.reason)
-    print(r.text[:300] + '...')
-    # fields = ['id', 'name', 'multicast', 'number_default']
-    i = 0
+    # sync processes at guard start
+    add_task(EnTasksNames.sync_analyzers, sleep_time)
+    while True:
+        # collect socket data
+        add_task(EnTasksNames.collect_analyzers_statuses, sleep_time)
+        task_handler()
+        # all necessary tasks have done - sleep
+        time.sleep(sleep_time)
 
 
 def stop():
@@ -243,13 +296,13 @@ def stop():
         if real_guard_state != 'stopped':
             print("\033[91m" + "Can't stop the Wall Guard correctly" + "\033[0m")
             sys.exit(1)
-    except OSError as err:
-        e = str(err.args)
+    except OSError as os_err:
+        e = str(os_err.args)
         if e.find("No such process") > 0:
             if os.path.exists(pid_file):
                 os.remove(pid_file)
         else:
-            print(str(err.args))
+            print(str(os_err.args))
             sys.exit(1)
 
 
@@ -286,8 +339,8 @@ def status():
 def get_process_state(pid, command):
     # get the application name from the command
     application_name = command.split(' ', 1)[0]
-    output, err = subprocess.Popen("ps -ela | grep "+str(pid)+" | grep "+application_name+" | awk \'{print $2}\'",
-                                   shell=True, stdout=subprocess.PIPE).communicate()
+    output, ps_err = subprocess.Popen("ps -ela | grep "+str(pid)+" | grep "+application_name+" | awk \'{print $2}\'",
+                                      shell=True, stdout=subprocess.PIPE).communicate()
     state = output.decode('utf-8')
     # in case of the several output results -> choose the first one
     if len(state) > 1:
