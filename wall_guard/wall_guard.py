@@ -22,11 +22,13 @@ default_rest_api_url = "http://127.0.0.1:8585/"
 sleep_time = 0
 analyzers_status_sock = 0
 tasks = []
+analyzers_responses_raw = []
 
 
 class EnTasksNames(Enum):
     sync_analyzers = 0
     collect_analyzers_statuses = 1
+    manage_analyzers_statuses = 2
 
 
 def create_udp_socket(ip, port):
@@ -45,6 +47,25 @@ def close_udp_socket():
     global analyzers_status_sock
     analyzers_status_sock.close()
     analyzers_status_sock = 0
+
+
+def recreate_udp_socket():
+    log_guard("Trying to recreate udp socket...")
+    global analyzers_status_sock
+    # get guard config from REST API
+    config = get_from_rest_api('guards/'+str(args.guard_id)+'/config/')
+    if len(config) == 0:
+        log_guard("Can't get guard config at udp socket reconnecting step. Check rest_url and guard_id")
+        return -1
+    # close broken socket
+    close_udp_socket()
+    # create udp socket again
+    analyzers_status_sock = create_udp_socket(config['ip'], config['port'])
+    if analyzers_status_sock == -1:
+        log_guard("Can't create udp socket at start")
+        return -1
+    log_guard("UDP socket recreated")
+    return 0
 
 
 def transform_to_daemon():
@@ -263,6 +284,8 @@ def task_handler():
                 run_r_m_analyzers()
             elif task['task'] == EnTasksNames.collect_analyzers_statuses.name:
                 collect_analyzers_statuses()
+            elif task['task'] == EnTasksNames.manage_analyzers_statuses.name:
+                manage_analyzers_statuses()
 
     # delete completed tasks
     tasks_count = len(tasks)
@@ -278,13 +301,29 @@ def task_handler():
 
 def collect_analyzers_statuses(max_iterations=7500):
     global analyzers_status_sock
-    input_sock_buf = 0
+    global analyzers_responses_raw
     while max_iterations:
         try:
-            input_sock_buf, addr = analyzers_status_sock.recvfrom(1024)  # buffer size is 1024 bytes
+            # read response from analyzer with buffer size 1024 bytes
+            analyzer_response, _ = analyzers_status_sock.recvfrom(1024)
+            if analyzer_response != b"":
+                analyzers_responses_raw.append(analyzer_response)
+            else:
+                log_guard("Response from analyzer is empty!")
+            max_iterations -= 1
+        # socket don't have any new info
         except socket.timeout:
             break
-        n = 0
+        except Exception as error:
+            log_guard("Read data from udp socket unexpected exception. Detail: "+str(error))
+            # recreate udp socket
+            recreate_udp_socket()
+            break
+
+
+def manage_analyzers_statuses():
+    global analyzers_responses_raw
+    h = 0
 
 
 def run():
@@ -304,6 +343,8 @@ def run():
     while True:
         # collect socket data
         add_task(EnTasksNames.collect_analyzers_statuses, sleep_time)
+        # handle read data from socket
+        add_task(EnTasksNames.manage_analyzers_statuses, sleep_time)
         task_handler()
         # all necessary tasks have done - sleep
         time.sleep(sleep_time)
