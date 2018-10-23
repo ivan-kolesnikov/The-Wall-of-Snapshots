@@ -13,18 +13,38 @@ import re
 import shlex
 from enum import Enum
 import json
+import socket
 
 pid_file = os.path.dirname(os.path.realpath(__file__))+'/guard.pid'
 log_file = os.path.dirname(os.path.realpath(__file__))+'/guard.log'
 r_m_analyzer_path = os.path.dirname(os.path.realpath(__file__))+'/r_m_analyzer'
 default_rest_api_url = "http://127.0.0.1:8585/"
 sleep_time = 0
+analyzers_status_sock = 0
 tasks = []
 
 
 class EnTasksNames(Enum):
     sync_analyzers = 0
     collect_analyzers_statuses = 1
+
+
+def create_udp_socket(ip, port):
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((ip, port))
+        sock.settimeout(0.1)
+    except socket.error as error:
+        log_guard("Can't create udp socket. Detail: "+str(error))
+        return -1
+    return sock
+
+
+def close_udp_socket():
+    global analyzers_status_sock
+    analyzers_status_sock.close()
+    analyzers_status_sock = 0
 
 
 def transform_to_daemon():
@@ -101,9 +121,13 @@ def get_active_processes():
     output_processes_byte, ps_err = subprocess.Popen("ps -fela | grep \'" + application_str_for_ps +
                                                      "' | awk \'{print $4,$1=$2=$3=$4=$5=$6=$7=$8="
                                                      "$9=$10=$11=$12=$13=$14=\"\",$0}\'",
-                                                     shell=True, stdout=subprocess.PIPE).communicate()
+                                                     shell=True, stdout=subprocess.PIPE,
+                                                     stderr=subprocess.PIPE).communicate()
+    # if error occurs during ps util execution
+    if ps_err != b"":
+        return -1
     output_processes_str = output_processes_byte.decode("utf-8")
-    # if no one running process for this application
+    # if analyzers processes aren't running
     if output_processes_str != "":
         output_processes = output_processes_str.rstrip().split("\n")
         for output_process in output_processes:
@@ -132,17 +156,13 @@ def get_active_processes():
 
 def kill_processes_out_of_api_scope():
     # get channels from REST API
-    channels = []
-    try:
-        channels = requests.get(args.rest_url+'channels/').json()
-    except Exception as error:
-        log_guard('Can not get channels from rest server. Detail: ' + str(error))
+    channels = get_from_rest_api('channels/')
     if len(channels) == 0:
-        print('The list of channels from REST API is empty')
+        log_guard("The list of channels from REST API is empty. Can't kill processes out of scope")
         return -1
     # get processes from ps utility
     processes = get_active_processes()
-    if len(processes) == 0:
+    if processes == -1:
         log_guard("The list of processes from ps utility is empty. "
                   "We don't have any processes to check and kill then.")
         return -1
@@ -163,26 +183,18 @@ def kill_processes_out_of_api_scope():
 
 def run_r_m_analyzers():
     # get guard config from REST API
-    try:
-        config = requests.get(args.rest_url+'guards/'+str(args.guard_id)+'/config/').json()
-    except Exception as error:
-        log_guard('Rest server connection error. Detail: '+str(error))
-        config = []
+    config = get_from_rest_api('guards/'+str(args.guard_id)+'/config/')
     if len(config) == 0:
-        print('Can not connect to the rest server. Check rest_url and guard_id.')
+        log_guard("Can't get config for start r_m_analyzers. Check rest_url and guard_id")
         return -1
     # get channels from REST API
-    channels = []
-    try:
-        channels = requests.get(args.rest_url+'channels/').json()
-    except Exception as error:
-        log_guard('Can not get channels from rest server. Detail: '+str(error))
+    channels = get_from_rest_api('channels/')
     if len(channels) == 0:
-        print('The list of channels from REST API is empty')
+        log_guard("The list of channels from REST API is empty. Can't start r_m_analyzers")
         return -1
     # get processes from ps utility
     processes = get_active_processes()
-    if len(processes) == 0:
+    if processes == -1:
         log_guard("The list of processes from ps utility is empty. "
                   "We don't have any processes to understand how many new instances are necessary to start.")
         return -1
@@ -211,11 +223,21 @@ def run_r_m_analyzers():
                 r_m_analyzer_process = subprocess.Popen(command, start_new_session=True,
                                                         stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
                 r_m_analyzer_pid = r_m_analyzer_process.pid
-                log_guard("r_m_analzer has been started. channel_id=" + str(channel['id']) +
+                log_guard("r_m_analyzer has been started. channel_id=" + str(channel['id']) +
                           " channel_name='" + channel['name'] + "' pid=" + str(r_m_analyzer_pid))
             except Exception as error:
                 log_guard("r_m_analyzer hasn't started. channel_id=" + str(channel['id']) +
                           " channel_name='" + channel['name'] + "' Detail: " + str(error))
+
+
+def get_from_rest_api(rest_request):
+    response = []
+    # get guard config from REST API
+    try:
+        response = requests.get(args.rest_url+rest_request).json()
+    except Exception as error:
+        log_guard("Rest server connection error. Detail: "+str(error))
+    return response
 
 
 def add_task(task_name, priority_time, task_id=-1):
@@ -254,11 +276,29 @@ def task_handler():
         j += 1
 
 
-def collect_analyzers_statuses():
-    h = 0
+def collect_analyzers_statuses(max_iterations=7500):
+    global analyzers_status_sock
+    input_sock_buf = 0
+    while max_iterations:
+        try:
+            input_sock_buf, addr = analyzers_status_sock.recvfrom(1024)  # buffer size is 1024 bytes
+        except socket.timeout:
+            break
+        n = 0
 
 
 def run():
+    global analyzers_status_sock
+    # get guard config from REST API
+    config = get_from_rest_api('guards/'+str(args.guard_id)+'/config/')
+    if len(config) == 0:
+        log_guard("Can't get guard config at start. Check rest_url and guard_id")
+        return -1
+    # create udp socket to get data from analyzers
+    analyzers_status_sock = create_udp_socket(config['ip'], config['port'])
+    if analyzers_status_sock == -1:
+        log_guard("Can't create udp socket at start")
+        return -1
     # sync processes at guard start
     add_task(EnTasksNames.sync_analyzers, sleep_time)
     while True:
@@ -384,12 +424,8 @@ if __name__ == '__main__':
     parser.add_argument('-r', '--rest_url', help='REST API url', default=default_rest_api_url)
     parser.add_argument('-i', '--guard_id', help='guard id', default=1, type=int)
     args = parser.parse_args()
-    try:
-        # get all channels from API
-        guard_config = requests.get(args.rest_url+'guards/'+str(args.guard_id)+'/config/').json()
-    except Exception as err:
-        print(str(err))
-        guard_config = []
+    # get guard config
+    guard_config = get_from_rest_api('guards/'+str(args.guard_id)+'/config/')
     if len(guard_config) == 0:
         print('Can not connect to the rest server. Check rest_url and guard_id.')
         sys.exit(1)
