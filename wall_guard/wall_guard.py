@@ -323,7 +323,33 @@ def collect_analyzers_statuses(max_iterations=7500):
 
 def manage_analyzers_statuses():
     global analyzers_responses_raw
-    h = 0
+    # make clean responses from analyzers_responses_raw
+    analyzers_responses = []
+    # foreach raw response
+    for analyzer_responses_raw in analyzers_responses_raw:
+        analyzer_response_str = analyzer_responses_raw.decode('utf-8')
+        # split each analyzer response by items
+        analyzer_response_items = analyzer_response_str.split('#')
+        # clean analyzer response
+        analyzer_response = {}
+        # item it's a dictionary: value_name and value
+        for analyzer_response_item in analyzer_response_items:
+            # split string by values
+            analyzer_response_item_lst = analyzer_response_item.split('|')
+            # we expect only 2 items after split
+            if len(analyzer_response_item_lst) == 2:
+                analyzer_response[analyzer_response_item_lst[0]] = analyzer_response_item_lst[1]
+            else:
+                log_guard("Parsing response from analyzer error. Parsed string: "+analyzer_response_str)
+                analyzer_response = {}
+                break
+        # if everything is fine with that response
+        if len(analyzer_response) != 0:
+            # append it to analyzers responses list
+            analyzers_responses.append(analyzer_response)
+
+    # managing analyzers statuses
+    m = 0
 
 
 def run():
