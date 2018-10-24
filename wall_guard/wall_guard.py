@@ -20,9 +20,13 @@ log_file = os.path.dirname(os.path.realpath(__file__))+'/guard.log'
 r_m_analyzer_path = os.path.dirname(os.path.realpath(__file__))+'/r_m_analyzer'
 default_rest_api_url = "http://127.0.0.1:8585/"
 sleep_time = 0
+min_bitrate_kbs = 0
 analyzers_status_sock = 0
 tasks = []
 analyzers_responses_raw = []
+channels_bitrate = []
+channels_bitrate_urgent = []
+channels_errors = []
 
 
 class EnTasksNames(Enum):
@@ -349,6 +353,60 @@ def manage_analyzers_statuses():
             analyzers_responses.append(analyzer_response)
 
     # managing analyzers statuses
+    global channels_bitrate
+    global channels_bitrate_urgent
+    global channels_errors
+    # foreach analyzer response
+    for analyzer_response in analyzers_responses:
+        # looking for errors in that response
+        udp_raises = analyzer_response.get('udp_errors', 0)
+        udp_amount = analyzer_response.get('udp_lost_packages', 0)
+        cc_raises = analyzer_response.get('cc_errors', 0)
+        # if error(s) exist add that response to the channels error list
+        if udp_raises or udp_amount or cc_raises:
+            channels_errors.append(analyzer_response)
+
+        # foreach existing bitrate
+        channel_has_not_found_in_bitrate_list = 1
+        for channel_bitrate_index in range(len(channels_bitrate)):
+            # if found that channel in the bitrate list
+            if analyzer_response['id'] == channels_bitrate[channel_bitrate_index]['id']:
+                channel_has_not_found_in_bitrate_list = 0
+                # get last bitrate for current channel
+                last_bitrate = analyzer_response.get('bitrate', -1)
+                # if last bitrate has been good
+                if last_bitrate >= min_bitrate_kbs and last_bitrate != -1:
+                    # if current bitrate from analyzer also is good
+                    if int(analyzer_response['bitrate']) >= min_bitrate_kbs:
+                        # update bitrate in the channels_bitrate list
+                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
+                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
+                    # if current bitrate from analyzer is bad
+                    else:
+                        # added that response to urgent bitrate list
+                        channels_bitrate_urgent.append(analyzer_response)
+                        # and update bitrate in channels_bintrate list
+                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
+                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
+                # if last bitrate hasn't been good
+                else:
+                    # if current bitrate from analyzer is good
+                    if int(analyzer_response['bitrate']) >= min_bitrate_kbs:
+                        # added that response to urgent bitrate list
+                        channels_bitrate_urgent.append(analyzer_response)
+                        # and update bitrate in channels_bitrate list
+                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
+                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
+                    # if current bitrate from analyzer is still bad
+                    else:
+                        # update bitrate in the channels_bitrate list
+                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
+                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
+        # if that channel hasn't found in existing channels_bitrate list
+        if channel_has_not_found_in_bitrate_list:
+            # add bitrate from that response in the channels_bitrate list
+            channels_bitrate.append({'id': analyzer_response['id'], 'timestamp': analyzer_response['timestamp'],
+                                     'bitrate': analyzer_response['bitrate']})
     m = 0
 
 
@@ -498,5 +556,6 @@ if __name__ == '__main__':
         sys.exit(1)
     else:
         sleep_time = guard_config['sleep_time']
+        min_bitrate_kbs = guard_config['min_bitrate_kbs']
 
     main()
