@@ -84,7 +84,7 @@ int main(int argc, char *argv[])
         {
             bitrate_kbs = read_bytes_sum*8/last_report_time_difference_ms*1000/1024;
             iter_datetime = current_datetime();
-            log_udp = "ch_id|"+std::string(argv[id_index])+"#timestamp|"+
+            log_udp = "id|"+std::string(argv[id_index])+"#timestamp|"+
                     iter_datetime+"#bitrate|"+std::to_string(bitrate_kbs);
             log_stdout = iter_datetime+" Bitrate: "+std::to_string(bitrate_kbs)+" Kbit/s";
             if (udp_error_raise_counter)
