@@ -23,7 +23,7 @@ sleep_time = 0
 min_bitrate_kbs = 0
 analyzers_status_sock = 0
 tasks = []
-analyzers_responses_raw = []
+analyzers_responses = []
 channels_bitrate = []
 channels_bitrate_urgent = []
 channels_errors = []
@@ -305,15 +305,12 @@ def task_handler():
 
 def collect_analyzers_statuses(max_iterations=7500):
     global analyzers_status_sock
-    global analyzers_responses_raw
+    global analyzers_responses
     while max_iterations:
+        # read data from socket
         try:
-            # read response from analyzer with buffer size 1024 bytes
-            analyzer_response, _ = analyzers_status_sock.recvfrom(1024)
-            if analyzer_response != b"":
-                analyzers_responses_raw.append(analyzer_response)
-            else:
-                log_guard("Response from analyzer is empty!")
+            # buffer size 1024 bytes
+            analyzer_response_raw, _ = analyzers_status_sock.recvfrom(1024)
             max_iterations -= 1
         # socket don't have any new info
         except socket.timeout:
@@ -324,84 +321,98 @@ def collect_analyzers_statuses(max_iterations=7500):
             recreate_udp_socket()
             break
 
+        # decode raw socket data
+        try:
+            analyzer_response_str = analyzer_response_raw.decode('utf-8')
+        except Exception as error:
+            log_guard("Can't decode analyzer response. Detail: "+str(error))
+            continue
+
+        # splitting response str for further processing
+        analyzer_response_for_processing = {}
+        try:
+            # status format: name1|value1#name2|value2
+            analyzer_response_items = analyzer_response_str.split('#')
+            # clean analyzer response
+            for analyzer_response_item in analyzer_response_items:
+                analyzer_response_item_lst = analyzer_response_item.split('|')
+                analyzer_response_for_processing[analyzer_response_item_lst[0]] = analyzer_response_item_lst[1]
+        except Exception as error:
+            log_guard("Can't split response from analyzer. Response: '"+analyzer_response_str+"' Detail: "+str(error))
+            continue
+
+        # get all possible data from analyzer response
+        channel_id = int(analyzer_response_for_processing.get('id', -1))
+        timestamp = str(analyzer_response_for_processing.get('timestamp', ""))
+        bitrate = int(analyzer_response_for_processing.get('bitrate', -1))
+        udp_raises = int(analyzer_response_for_processing.get('udp_errors', 0))
+        udp_amount = int(analyzer_response_for_processing.get('udp_lost_packages', 0))
+        cc_raises = int(analyzer_response_for_processing.get('cc_errors', 0))
+        # check input data
+        if channel_id == -1:
+            log_guard("Channel id in analyzer response isn't correct. Response:'"+analyzer_response_str+"'")
+            continue
+        if timestamp == "":
+            log_guard("Timestamp in analyzer response isn't correct. Response:'"+analyzer_response_str+"'")
+            continue
+        if bitrate == -1:
+            log_guard("Bitrate in analyzer response isn't correct. Response:'" + analyzer_response_str + "'")
+            continue
+        # append analyzer response in the analyzers_responses list
+        analyzers_responses.append({'id': channel_id, 'timestamp': timestamp, 'bitrate': bitrate,
+                                    'udp_raises': udp_raises, 'udp_amount': udp_amount, 'cc_raises': cc_raises})
+
 
 def manage_analyzers_statuses():
-    global analyzers_responses_raw
-    # make clean responses from analyzers_responses_raw
-    analyzers_responses = []
-    # foreach raw response
-    for analyzer_responses_raw in analyzers_responses_raw:
-        analyzer_response_str = analyzer_responses_raw.decode('utf-8')
-        # split each analyzer response by items
-        analyzer_response_items = analyzer_response_str.split('#')
-        # clean analyzer response
-        analyzer_response = {}
-        # item it's a dictionary: value_name and value
-        for analyzer_response_item in analyzer_response_items:
-            # split string by values
-            analyzer_response_item_lst = analyzer_response_item.split('|')
-            # we expect only 2 items after split
-            if len(analyzer_response_item_lst) == 2:
-                analyzer_response[analyzer_response_item_lst[0]] = analyzer_response_item_lst[1]
-            else:
-                log_guard("Parsing response from analyzer error. Parsed string: "+analyzer_response_str)
-                analyzer_response = {}
-                break
-        # if everything is fine with that response
-        if len(analyzer_response) != 0:
-            # append it to analyzers responses list
-            analyzers_responses.append(analyzer_response)
-
-    # managing analyzers statuses
+    global analyzers_responses
     global channels_bitrate
     global channels_bitrate_urgent
     global channels_errors
     # foreach analyzer response
     for analyzer_response in analyzers_responses:
-        # looking for errors in that response
-        udp_raises = analyzer_response.get('udp_errors', 0)
-        udp_amount = analyzer_response.get('udp_lost_packages', 0)
-        cc_raises = analyzer_response.get('cc_errors', 0)
-        # if error(s) exist add that response to the channels error list
-        if udp_raises or udp_amount or cc_raises:
+        # check errors in response and add this response in the channels_errors list if error(s) exist
+        if analyzer_response['udp_raises'] or analyzer_response['udp_amount'] or analyzer_response['cc_raises']:
             channels_errors.append(analyzer_response)
 
         # foreach existing bitrate
         channel_has_not_found_in_bitrate_list = 1
-        for channel_bitrate_index in range(len(channels_bitrate)):
+        for ch_index in range(len(channels_bitrate)):
             # if found that channel in the bitrate list
-            if analyzer_response['id'] == channels_bitrate[channel_bitrate_index]['id']:
+            if analyzer_response['id'] == channels_bitrate[ch_index]['id']:
+                # found channel flag
                 channel_has_not_found_in_bitrate_list = 0
-                # get last bitrate for current channel
-                last_bitrate = analyzer_response.get('bitrate', -1)
-                # if last bitrate has been good
-                if last_bitrate >= min_bitrate_kbs and last_bitrate != -1:
-                    # if current bitrate from analyzer also is good
-                    if int(analyzer_response['bitrate']) >= min_bitrate_kbs:
-                        # update bitrate in the channels_bitrate list
-                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
-                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
+                # if previous bitrate for that channel has been GOOD
+                if channels_bitrate[ch_index]['bitrate'] >= min_bitrate_kbs:
+                    # if current bitrate for that channel also is good
+                    if analyzer_response['bitrate'] >= min_bitrate_kbs:
+                        # update timestamp in the channels_bitrate list
+                        channels_bitrate[ch_index]['timestamp'] = analyzer_response['timestamp']
+                        # and update bitrate
+                        channels_bitrate[ch_index]['bitrate'] = analyzer_response['bitrate']
                     # if current bitrate from analyzer is bad
                     else:
-                        # added that response to urgent bitrate list
+                        # add that response to urgent bitrate list
                         channels_bitrate_urgent.append(analyzer_response)
-                        # and update bitrate in channels_bintrate list
-                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
-                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
-                # if last bitrate hasn't been good
+                        # update timestamp in the channels_bitrate list
+                        channels_bitrate[ch_index]['timestamp'] = analyzer_response['timestamp']
+                        # and update bitrate
+                        channels_bitrate[ch_index]['bitrate'] = analyzer_response['bitrate']
+                # if previous bitrate for that channel has been BAD
                 else:
                     # if current bitrate from analyzer is good
-                    if int(analyzer_response['bitrate']) >= min_bitrate_kbs:
+                    if analyzer_response['bitrate'] >= min_bitrate_kbs:
                         # added that response to urgent bitrate list
                         channels_bitrate_urgent.append(analyzer_response)
-                        # and update bitrate in channels_bitrate list
-                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
-                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
-                    # if current bitrate from analyzer is still bad
+                        # update timestamp in the channels_bitrate list
+                        channels_bitrate[ch_index]['timestamp'] = analyzer_response['timestamp']
+                        # and update bitrate
+                        channels_bitrate[ch_index]['bitrate'] = analyzer_response['bitrate']
+                    # if current bitrate from analyzer still bad
                     else:
-                        # update bitrate in the channels_bitrate list
-                        channels_bitrate[channel_bitrate_index]['timestamp'] = analyzer_response['timestamp']
-                        channels_bitrate[channel_bitrate_index]['bitrate'] = analyzer_response['bitrate']
+                        # update timestamp in the channels_bitrate list
+                        channels_bitrate[ch_index]['timestamp'] = analyzer_response['timestamp']
+                        # and update bitrate
+                        channels_bitrate[ch_index]['bitrate'] = analyzer_response['bitrate']
         # if that channel hasn't found in existing channels_bitrate list
         if channel_has_not_found_in_bitrate_list:
             # add bitrate from that response in the channels_bitrate list
