@@ -392,7 +392,9 @@ def manage_analyzers_statuses():
                     # if current bitrate from analyzer is bad
                     else:
                         # add that response to urgent bitrate list
-                        channels_bitrate_urgent.append(analyzer_response)
+                        channels_bitrate_urgent.append({'id': analyzer_response['id'],
+                                                        'timestamp': analyzer_response['timestamp'],
+                                                        'bitrate': analyzer_response['bitrate']})
                         # update timestamp in the channels_bitrate list
                         channels_bitrate[ch_index]['timestamp'] = analyzer_response['timestamp']
                         # and update bitrate
@@ -418,7 +420,36 @@ def manage_analyzers_statuses():
             # add bitrate from that response in the channels_bitrate list
             channels_bitrate.append({'id': analyzer_response['id'], 'timestamp': analyzer_response['timestamp'],
                                      'bitrate': analyzer_response['bitrate']})
-    m = 0
+    # if we have to send urgent bitrate list
+    if len(channels_bitrate_urgent) > 0:
+        # send bitrate with urgent flag
+        send_bitrate_to_rest(1)
+
+
+def send_errors_to_rest():
+    global channels_errors
+    for channel_error in channels_errors:
+        # r = requests.post("http://127.0.0.1:8585/channels/", json=[{'id': '125247', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}, {'id': '125246', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}])
+        # r = requests.put("http://127.0.0.1:8585/channels/125245/", data={'id': 125245, 'name': 'test_e', 'multicast': 'rtp://ttttttttt', 'number_default': 44})
+        m = 0
+
+
+def send_bitrate_to_rest(urgent=0):
+    global channels_bitrate
+    global channels_bitrate_urgent
+    request_to_rest = []
+    if urgent:
+        for channel_bitrate in channels_bitrate_urgent:
+            request_to_rest.append({'id': channel_bitrate['id'], 'timestamp': channel_bitrate['timestamp'],
+                                    'bitrate': channel_bitrate['bitrate']})
+        result = requests.post(args.rest_url+"/bitrate/", data=request_to_rest)
+        channels_bitrate_urgent = []
+    else:
+        for channels_bitrate in channels_bitrate:
+            # send request
+            k = 0
+
+        channels_bitrate = []
 
 
 def run():
