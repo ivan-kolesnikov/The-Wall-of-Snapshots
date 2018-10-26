@@ -20,6 +20,8 @@ log_file = os.path.dirname(os.path.realpath(__file__))+'/guard.log'
 r_m_analyzer_path = os.path.dirname(os.path.realpath(__file__))+'/r_m_analyzer'
 default_rest_api_url = "http://127.0.0.1:8585/"
 sleep_time = 0
+update_errors_time = 0
+update_bitrate_time = 0
 min_bitrate_kbs = 0
 analyzers_status_sock = 0
 tasks = []
@@ -33,6 +35,8 @@ class EnTasksNames(Enum):
     sync_analyzers = 0
     collect_analyzers_statuses = 1
     manage_analyzers_statuses = 2
+    send_bitrate = 3
+    send_error = 4
 
 
 def create_udp_socket(ip, port):
@@ -290,6 +294,10 @@ def task_handler():
                 collect_analyzers_statuses()
             elif task['task'] == EnTasksNames.manage_analyzers_statuses.name:
                 manage_analyzers_statuses()
+            elif task['task'] == EnTasksNames.send_bitrate.name:
+                send_bitrate_to_rest()
+            elif task['task'] == EnTasksNames.send_error.name:
+                send_errors_to_rest()
 
     # delete completed tasks
     tasks_count = len(tasks)
@@ -440,16 +448,19 @@ def send_bitrate_to_rest(urgent=0):
     request_to_rest = []
     if urgent:
         for channel_bitrate in channels_bitrate_urgent:
-            request_to_rest.append({'id': channel_bitrate['id'], 'timestamp': channel_bitrate['timestamp'],
-                                    'bitrate': channel_bitrate['bitrate']})
+            request_to_rest.append({'channel_id': channels_bitrate_urgent['id'],
+                                    'updated_on': channels_bitrate_urgent['timestamp'],
+                                    'bitrate_kbs': channels_bitrate_urgent['bitrate']})
         result = requests.post(args.rest_url+"/bitrate/", data=request_to_rest)
         channels_bitrate_urgent = []
     else:
-        for channels_bitrate in channels_bitrate:
-            # send request
-            k = 0
-
+        for channel_bitrate in channels_bitrate:
+            request_to_rest.append({'channel_id': channel_bitrate['id'],
+                                    'updated_on': channel_bitrate['timestamp'],
+                                    'bitrate_kbs': channel_bitrate['bitrate']})
+        result = requests.post(args.rest_url + "bitrate/", json=request_to_rest)
         channels_bitrate = []
+    g = 0
 
 
 def run():
@@ -471,6 +482,10 @@ def run():
         add_task(EnTasksNames.collect_analyzers_statuses, sleep_time)
         # handle read data from socket
         add_task(EnTasksNames.manage_analyzers_statuses, sleep_time)
+        # add send bitrate task if it's necessary
+        add_task(EnTasksNames.send_bitrate, update_bitrate_time)
+        # add send errors task if it's necessary
+        add_task(EnTasksNames.send_error, update_errors_time)
         task_handler()
         # all necessary tasks have done - sleep
         time.sleep(sleep_time)
@@ -598,6 +613,8 @@ if __name__ == '__main__':
         sys.exit(1)
     else:
         sleep_time = guard_config['sleep_time']
+        update_errors_time = guard_config['update_errors_time']
+        update_bitrate_time = guard_config['update_bitrate_time']
         min_bitrate_kbs = guard_config['min_bitrate_kbs']
 
     main()

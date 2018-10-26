@@ -7,19 +7,13 @@ from rest_framework import viewsets
 #from twos_rest.twos_rest.twos_rest_api.models import
 
 from rest_framework.views import APIView
-from .models import Channel, Event, Guard
+from .models import Channel, Guard
 from .serializers import *
 from rest_framework.response import Response
 from rest_framework import status
-
-
 from django.http import Http404
-
-
 import mysql.connector
 from mysql.connector import errorcode
-
-
 from pprint import pprint
 
 
@@ -84,6 +78,34 @@ class GuardConfigDetail(APIView):
         guard = self.get_object(pk)
         serializer = GuardConfigSerializer(guard)
         return Response(serializer.data)
+
+
+class ErrorsList(APIView):
+    def get(self, request):
+        errors = Error.objects.all().order_by('-id')
+        serializer = ErrorSerializer(errors, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, format=None):
+        serializer = ErrorSerializer(data=request.data, many=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class BitrateList(APIView):
+    def get(self, request):
+        bitrate = Bitrate.objects.all().order_by('-id')
+        serializer = BitrateSerializer(bitrate, many=True)
+        return Response(serializer.data)
+
+    def post(self, request, format=None):
+        serializer = BitrateSerializer(data=request.data, many=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ChannelsUpdate(APIView):
