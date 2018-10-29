@@ -23,14 +23,16 @@ class Guard(models.Model):
 
 class Bitrate(models.Model):
     id = models.AutoField(primary_key=True)
-    channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True, related_name='bitrate')
+    channel_id = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True,
+                                   db_column='channel_id', related_name='bitrate')
     updated_on = models.DateTimeField(null=True)
     bitrate_kbs = models.PositiveIntegerField(null=True)
 
 
 class Error(models.Model):
     id = models.AutoField(primary_key=True)
-    channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True, related_name='error')
+    channel_id = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True,
+                                   db_column='channel_id', related_name='error')
     occurred_on = models.DateTimeField(null=True)
     udp_raises = models.PositiveIntegerField(null=True)
     udp_amount = models.PositiveIntegerField(null=True)
@@ -39,6 +41,7 @@ class Error(models.Model):
 
 class Snap(models.Model):
     id = models.AutoField(primary_key=True)
-    channel = models.ForeignKey(Channel, on_delete=models.DO_NOTHING, null=True)
+    channel_id = models.ForeignKey(Channel, on_delete=models.DO_NOTHING,
+                                   db_column='channel_id', null=True)
     updated_on = models.DateTimeField(null=True)
     snap_location = models.CharField(max_length=500)
