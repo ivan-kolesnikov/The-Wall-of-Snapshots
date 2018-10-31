@@ -270,22 +270,27 @@ def get_from_rest_api(rest_request):
 
 
 def add_task(task_name, priority_time, task_id=-1):
+    # get current epoch time
+    current_time = int(time.time())
+    # calculate necessary execution time
+    execution_time = current_time + priority_time
     # no one the same task
     for task in tasks:
         if task_name.name == task['task']:
             if task_id == task['task_id']:
                 return -1
     tasks.append(json.loads('{"task_id" : '+str(task_id)+', "task" : "'+task_name.name +
-                            '", "priority_time" : '+str(priority_time)+'}'))
+                            '", "execution_time" : '+str(execution_time)+'}'))
     return 0
 
 
 def task_handler():
     global tasks
+    # get current epoch time
+    current_time = int(time.time())
     for task in tasks:
-        task['priority_time'] -= sleep_time
         # if need to do this task
-        if task['priority_time'] < 1:
+        if task['execution_time'] <= current_time:
             # check and kill all unnecessary analyzers
             if task['task'] == EnTasksNames.sync_analyzers.name:
                 kill_processes_out_of_api_scope()
@@ -304,7 +309,7 @@ def task_handler():
     i = 0
     j = 0
     while j < tasks_count:
-        if tasks[i]['priority_time'] < 1:
+        if tasks[i]['execution_time'] <= current_time:
             del tasks[i]
             i -= 1
         i += 1
@@ -432,14 +437,24 @@ def manage_analyzers_statuses():
     if len(channels_bitrate_urgent) > 0:
         # send bitrate with urgent flag
         send_bitrate_to_rest(1)
+    # just clean analyzer response list as all responses has been processed
+    analyzers_responses = []
 
 
 def send_errors_to_rest():
     global channels_errors
+    request_to_rest = []
     for channel_error in channels_errors:
-        # r = requests.post("http://127.0.0.1:8585/channels/", json=[{'id': '125247', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}, {'id': '125246', 'name': 'test_e', 'multicast': 'rtp://rrrr', 'number_default': 44}])
-        # r = requests.put("http://127.0.0.1:8585/channels/125245/", data={'id': 125245, 'name': 'test_e', 'multicast': 'rtp://ttttttttt', 'number_default': 44})
-        m = 0
+        request_to_rest.append({'channel_id': channel_error['id'],
+                                'occurred_on': channel_error['timestamp'],
+                                'udp_raises': channel_error['udp_raises'],
+                                'udp_amount': channel_error['udp_amount'],
+                                'cc_raises': channel_error['cc_raises']})
+        rest_response = requests.post(args.rest_url + "errors/", json=request_to_rest)
+        channels_errors = []
+        if rest_response.status_code != 201:
+            log_guard("Sending errors to the rest server error. Status code is " +
+                      str(rest_response.status_code))
 
 
 def send_bitrate_to_rest(urgent=0):
@@ -448,19 +463,24 @@ def send_bitrate_to_rest(urgent=0):
     request_to_rest = []
     if urgent:
         for channel_bitrate in channels_bitrate_urgent:
-            request_to_rest.append({'channel_id': channels_bitrate_urgent['id'],
-                                    'updated_on': channels_bitrate_urgent['timestamp'],
-                                    'bitrate_kbs': channels_bitrate_urgent['bitrate']})
-        result = requests.post(args.rest_url+"/bitrate/", data=request_to_rest)
+            request_to_rest.append({'channel_id': channel_bitrate['id'],
+                                    'updated_on': channel_bitrate['timestamp'],
+                                    'bitrate_kbs': channel_bitrate['bitrate']})
+        rest_response = requests.post(args.rest_url + "bitrate/", json=request_to_rest)
         channels_bitrate_urgent = []
+        if rest_response.status_code != 201:
+            log_guard("Sending urgent bitrate to the rest server error. Status code is " +
+                      str(rest_response.status_code))
     else:
         for channel_bitrate in channels_bitrate:
             request_to_rest.append({'channel_id': channel_bitrate['id'],
                                     'updated_on': channel_bitrate['timestamp'],
                                     'bitrate_kbs': channel_bitrate['bitrate']})
-        result = requests.post(args.rest_url + "bitrate/", json=request_to_rest)
+        rest_response = requests.post(args.rest_url + "bitrate/", json=request_to_rest)
         channels_bitrate = []
-    g = 0
+        if rest_response.status_code != 201:
+            log_guard("Sending bitrate to the rest server error. Status code is " +
+                      str(rest_response.status_code))
 
 
 def run():
