@@ -376,6 +376,24 @@ def collect_analyzers_statuses(max_iterations=7500):
                                     'udp_raises': udp_raises, 'udp_amount': udp_amount, 'cc_raises': cc_raises})
 
 
+def send_errors_to_rest():
+    global channels_errors
+    request_to_rest = []
+    for channel_error in channels_errors:
+        request_to_rest.append({'channel_id': channel_error['id'],
+                                'occurred_on': channel_error['timestamp'],
+                                'udp_raises': channel_error['udp_raises'],
+                                'udp_amount': channel_error['udp_amount'],
+                                'cc_raises': channel_error['cc_raises']})
+    # if we have errors to send
+    if len(request_to_rest):
+        rest_response = requests.post(args.rest_url + "errors/", json=request_to_rest)
+        channels_errors = []
+        if rest_response.status_code != 201:
+            log_guard("Sending errors to the rest server error. Status code is " +
+                      str(rest_response.status_code)+" Detail: "+str(rest_response))
+
+
 def manage_analyzers_statuses():
     global analyzers_responses
     global channels_bitrate
@@ -441,22 +459,6 @@ def manage_analyzers_statuses():
     analyzers_responses = []
 
 
-def send_errors_to_rest():
-    global channels_errors
-    request_to_rest = []
-    for channel_error in channels_errors:
-        request_to_rest.append({'channel_id': channel_error['id'],
-                                'occurred_on': channel_error['timestamp'],
-                                'udp_raises': channel_error['udp_raises'],
-                                'udp_amount': channel_error['udp_amount'],
-                                'cc_raises': channel_error['cc_raises']})
-        rest_response = requests.post(args.rest_url + "errors/", json=request_to_rest)
-        channels_errors = []
-        if rest_response.status_code != 201:
-            log_guard("Sending errors to the rest server error. Status code is " +
-                      str(rest_response.status_code))
-
-
 def send_bitrate_to_rest(urgent=0):
     global channels_bitrate
     global channels_bitrate_urgent
@@ -470,7 +472,7 @@ def send_bitrate_to_rest(urgent=0):
         channels_bitrate_urgent = []
         if rest_response.status_code != 201:
             log_guard("Sending urgent bitrate to the rest server error. Status code is " +
-                      str(rest_response.status_code))
+                      str(rest_response.status_code)+" Detail: "+str(rest_response.content))
     else:
         for channel_bitrate in channels_bitrate:
             request_to_rest.append({'channel_id': channel_bitrate['id'],
@@ -480,7 +482,7 @@ def send_bitrate_to_rest(urgent=0):
         channels_bitrate = []
         if rest_response.status_code != 201:
             log_guard("Sending bitrate to the rest server error. Status code is " +
-                      str(rest_response.status_code))
+                      str(rest_response.status_code)+" Detail: "+str(rest_response.content))
 
 
 def run():
@@ -506,6 +508,8 @@ def run():
         add_task(EnTasksNames.send_bitrate, update_bitrate_time)
         # add send errors task if it's necessary
         add_task(EnTasksNames.send_error, update_errors_time)
+        # sync processes each minute
+        add_task(EnTasksNames.sync_analyzers, 609)
         task_handler()
         # all necessary tasks have done - sleep
         time.sleep(sleep_time)
