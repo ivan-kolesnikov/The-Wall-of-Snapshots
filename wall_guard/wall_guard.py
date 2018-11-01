@@ -387,7 +387,7 @@ def send_errors_to_rest():
                                 'cc_raises': channel_error['cc_raises']})
     # if we have errors to send
     if len(request_to_rest):
-        rest_response = requests.post(args.rest_url + "errors/", json=request_to_rest)
+        rest_response = requests.post(args.rest_url + "channels/errors/", json=request_to_rest)
         channels_errors = []
         if rest_response.status_code != 201:
             log_guard("Sending errors to the rest server error. Status code is " +

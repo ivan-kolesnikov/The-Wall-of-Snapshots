@@ -16,16 +16,28 @@ class GuardConfigSerializer(serializers.ModelSerializer):
         fields = ['id', 'ip', 'port', 'min_bitrate_kbs', 'sleep_time', 'update_errors_time', 'update_bitrate_time']
 
 
-class ErrorSerializer(serializers.ModelSerializer):
+class AllErrorSerializer(serializers.ModelSerializer):
     class Meta:
         model = Error
         fields = ['id', 'channel_id', 'occurred_on', 'udp_raises', 'udp_amount', 'cc_raises']
 
 
+class CcErrorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Error
+        fields = ['id', 'channel_id', 'occurred_on', 'cc_raises']
+
+
+class UdpErrorSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Error
+        fields = ['id', 'channel_id', 'occurred_on', 'udp_raises', 'udp_amount']
+
+
 class BitrateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Bitrate
-        fields = ['channel_id', 'updated_on', 'bitrate_kbs']
+        fields = ['id', 'channel_id', 'updated_on', 'bitrate_kbs']
 
 '''
 class BitrateSerializer(serializers.ModelSerializer):

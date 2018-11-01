@@ -21,10 +21,18 @@ from django.urls import path, re_path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # all channels + select channel by channel id
     path('channels/', views.ChannelsList.as_view()),
-    path('bitrate/', views.BitrateList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/$', views.ChannelDetail.as_view()),
+    # update channels
     path('channels/update/', views.ChannelsUpdate.as_view()),
+    # channels errors + select channel errors by channel id
+    path('channels/errors/', views.ErrorsList.as_view()),
+    re_path('channels/(?P<pk>[0-9]+)/errors/', views.ErrorDetail.as_view()),
+
+    path('bitrate/', views.BitrateList.as_view()),
+
+
     path('channels/down/', views.ChannelDropsList.as_view()),
     path('channels/events/', views.ChannelEventList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),

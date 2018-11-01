@@ -80,18 +80,96 @@ class GuardConfigDetail(APIView):
         return Response(serializer.data)
 
 
+def request_parser(request):
+    # default duration is 1 month
+    errors_duration_sec_default = 2592000
+    # get duration from request
+    try:
+        duration = int(request.query_params['duration'])
+    except Exception as _:
+        duration = errors_duration_sec_default
+
+    """
+    err_type:
+    0 - all
+    1 - cc
+    2 - udp
+    """
+    # get error type from request
+    try:
+        if request.query_params['type'] == "cc":
+            err_type = 1
+        elif request.query_params['type'] == "udp":
+            err_type = 2
+        else:
+            err_type = 0
+    except Exception as _:
+        err_type = 0
+    return duration, err_type
+
+
 class ErrorsList(APIView):
     def get(self, request):
-        errors = Error.objects.all().order_by('-id')
-        serializer = ErrorSerializer(errors, many=True)
+        duration, err_type = request_parser(request)
+        # calculate duration timerange
+        time_current = datetime.now()
+        time_from = time_current - timedelta(seconds=duration)
+
+        # if need to show only CC erros
+        if err_type == 1:
+            errors = Error.objects.filter(cc_raises__gt=0,
+                                          occurred_on__range=(time_from, time_current)).order_by('-id')
+            serializer = CcErrorSerializer(errors, many=True)
+        # if need to show only UDP erros
+        elif err_type == 2:
+            errors = Error.objects.filter(udp_raises__gt=0,
+                                          occurred_on__range=(time_from, time_current)).order_by('-id')
+            serializer = UdpErrorSerializer(errors, many=True)
+        # if need to show ALL erros
+        else:
+            errors = Error.objects.filter(occurred_on__range=(time_from, time_current)).order_by('-id')
+            serializer = AllErrorSerializer(errors, many=True)
         return Response(serializer.data)
 
     def post(self, request, format=None):
-        serializer = ErrorSerializer(data=request.data, many=True)
+        serializer = AllErrorSerializer(data=request.data, many=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ErrorDetail(APIView):
+    def get_object(self, pk):
+        try:
+            return Channel.objects.get(pk=pk)
+        except Channel.DoesNotExist:
+            raise Http404
+
+    def get(self, request, pk, format=None):
+        self.get_object(pk)
+        duration, err_type = request_parser(request)
+        # calculate duration timerange
+        time_current = datetime.now()
+        time_from = time_current - timedelta(seconds=duration)
+        # if need to show only CC erros
+        if err_type == 1:
+            errors = Error.objects.filter(channel_id=pk,
+                                          cc_raises__gt=0,
+                                          occurred_on__range=(time_from, time_current)).order_by('-id')
+            serializer = CcErrorSerializer(errors, many=True)
+        # if need to show only UDP erros
+        elif err_type == 2:
+            errors = Error.objects.filter(channel_id=pk,
+                                          udp_raises__gt=0,
+                                          occurred_on__range=(time_from, time_current)).order_by('-id')
+            serializer = UdpErrorSerializer(errors, many=True)
+        # if need to show ALL erros
+        else:
+            errors = Error.objects.filter(channel_id=pk,
+                                          occurred_on__range=(time_from, time_current)).order_by('-id')
+            serializer = AllErrorSerializer(errors, many=True)
+        return Response(serializer.data)
 
 
 class BitrateList(APIView):
