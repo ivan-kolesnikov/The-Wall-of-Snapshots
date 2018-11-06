@@ -61,10 +61,16 @@ class DroppedChannelsSerializer(serializers.ModelSerializer):
     def get_last_bitrate_field(self, channel):
         bitrate = Bitrate.objects.filter(channel_id=channel.id).order_by('id')
         last_bitrate = bitrate.last()
-        serializer = BitrateSerializer(instance=last_bitrate)
+        serializer = DropBitrateSerializer(instance=last_bitrate)
         return serializer.data
 
     class Meta:
         model = Channel
         fields = ['id', 'name', 'last_bitrate']
+
+
+class DropBitrateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Bitrate
+        fields = ['updated_on', 'bitrate_kbs']
 

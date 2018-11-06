@@ -298,7 +298,7 @@ class EventsList(APIView):
         pass
 
 
-class ChannelDropsList(APIView):
+class ChannelDownNowList(APIView):
     def get(self, request):
         # get all channels
         channels = Channel.objects.all()
@@ -322,8 +322,17 @@ class ChannelDropsList(APIView):
         serializer = DroppedChannelsSerializer(dropped_channels, many=True)
         return Response(serializer.data)
 
-    def put(self):
-        pass
+
+class ChannelDownList(APIView):
+    def get(self, request):
+        return Response([{'id': 'Test ID',
+                         'name': 'Test Name',
+                         'from': '2018-11-06T15:04:15',
+                         'to': '2018-11-06T15:04:15',
+                         'duration': '6542'},
+                         {
+                             'detail': 'In development'
+                         }])
 
 
 class ChannelEventList(APIView):

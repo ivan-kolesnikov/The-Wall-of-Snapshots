@@ -29,11 +29,14 @@ urlpatterns = [
     # channels errors + select channel errors by channel id
     path('channels/errors/', views.ErrorsList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/errors/', views.ErrorDetail.as_view()),
+    # channels down statistic
+    path('channels/down/', views.ChannelDownList.as_view()),
+    path('channels/down/now', views.ChannelDownNowList.as_view()),
 
     path('bitrate/', views.BitrateList.as_view()),
 
 
-    path('channels/down/', views.ChannelDropsList.as_view()),
+
     path('channels/events/', views.ChannelEventList.as_view()),
     re_path('channels/(?P<pk>[0-9]+)/events', views.ChannelEventDetail.as_view()),
     path('events/', views.EventsList.as_view()),
