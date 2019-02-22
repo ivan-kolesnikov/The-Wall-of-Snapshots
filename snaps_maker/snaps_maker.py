@@ -12,12 +12,15 @@ import requests
 import re
 import shlex
 import psutil
+import threading
 
 default_rest_api_url = "http://10.0.255.125:8585/"
 default_ffmpeg_path = "ffmpeg"
 default_path_to_snaps = os.path.dirname(os.path.realpath(__file__))+'/Snaps'
 log_file = os.path.dirname(os.path.realpath(__file__))+'/snaps_maker.log'
 pid_file = os.path.dirname(os.path.realpath(__file__))+'/snaps_maker.pid'
+cpu = 0
+app_killed = 0
 
 
 def get_cpu_usage(interval_sec):
@@ -27,6 +30,18 @@ def get_cpu_usage(interval_sec):
         log_sm(get_current_time() + " Could not get the cpu usage. By the following reason: " + str(err))
         return 0
     return cpu_usage
+
+
+def get_cpu_usage_thread():
+    global cpu
+    global app_killed
+    while True:
+        try:
+            cpu = int(psutil.cpu_percent(interval=1))
+        except Exception as err:
+            log_sm(get_current_time() + " Could not get the cpu usage. By the following reason: " + str(err))
+        if app_killed:
+            return 0
 
 
 def transform_to_daemon():
@@ -102,19 +117,24 @@ def take_snapshot(channel):
         log_sm("Can not cut the multicast address. "+str(err))
         return -1
 
-    command = args.ffmpeg_path+" -i "+input_address+" -s 120x70 -vframes 1 " + \
+    command = args.ffmpeg_path+" -i "+input_address+" -vf \"select=eq(pict_type\,I)\" -s 120x70 -vframes 1 " + \
                                args.snaps_folder_dir+"/"+str(channel['id'])+".jpg"
-    command = "timeout -s 9 10 " +command
+    command = "timeout -s 9 8 " +command
     command = shlex.split(command)
     try:
         ffmpeg_proc = subprocess.Popen(command, start_new_session=True, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
     except Exception as err:
         ffmpeg_proc.kill()
         log_sm("Can't start the ffmpeg process to take a snapshot. "+str(err))
+    time.sleep(0.05)
 
 
 def main():
+    global cpu
+    global app_killed
     #transform_to_daemon()
+    cpu_thread = threading.Thread(name='cpu_usage_thread', target=get_cpu_usage_thread)
+    cpu_thread.start()
     while True:
         # get all channels from the rest server
         channels = get_from_rest_api('channels/')
@@ -125,31 +145,29 @@ def main():
             continue
 
         channels_len = len(channels)
-        cpu_usage = 0
         i = 0
         start_epoch = int(datetime.now().timestamp())
         print("start "+str(start_epoch))
         while i < channels_len:
-            print(str(cpu_usage))
-            # get and update CPU each 5th iteration
-            if not (i % 3):
-                cpu_usage = get_cpu_usage(0.1)
             # if CPU performance hasn't exceeded
-            if cpu_usage < args.max_cpu_usage:
+            if cpu < args.max_cpu_usage:
                 # take snapshot on CPU
                 take_snapshot(channels[i])
+                print('|', end='', flush=True)
             else:
                 # get and update CPU usage during 1 second
-                cpu_usage = get_cpu_usage(1)
+                time.sleep(0.2)
                 # try to take a snapshot for that channel again
                 continue
             i += 1
+        #app_killed = 1
+        print('|')
+        time.sleep(8)
         end_epoch = int(datetime.now().timestamp())
         print("end " + str(end_epoch))
         delta_epoch = end_epoch-start_epoch
         print("delta " + str(delta_epoch)+"\n")
-        time.sleep(12)
-        break
+        #break
 
 
 if __name__ == '__main__':
@@ -158,7 +176,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--ffmpeg_path', help='Path to FFmpeg', default=default_ffmpeg_path)
     parser.add_argument('-d', '--snaps_folder_dir', help='Path to Snaps', default=default_path_to_snaps)
     parser.add_argument('-c', '--max_cpu_usage', help='Max CPU usage. Do not exceed that value to take snapshot',
-                        type=int, default=30)
+                        type=int, default=50)
     args = parser.parse_args()
     # test connection to the REST server
     test_response = get_from_rest_api('channels/')
